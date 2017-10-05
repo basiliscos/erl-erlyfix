@@ -111,10 +111,55 @@ callback(Event, Acc) ->
         _ -> Acc
     end.
 
+map_values(Acc, []) -> Acc;
+map_values({Value4Key, Value4Description}, [Value | Rest]) ->
+    K = Value#value_def.key,
+    D = Value#value_def.description,
+    Acc = {
+        Value4Key#{K => Value},
+        Value4Description#{D => Value}
+    },
+    map_values(Acc, Rest).
+
+
+construct_fields(Acc, []) -> Acc;
+construct_fields({Field4Name, Field4Number}, [FieldDefinition | Rest]) ->
+    ValuesList = FieldDefinition#field_def.values,
+    {Value4Key, Value4Description} = map_values({ #{}, #{} }, ValuesList),
+    Name = FieldDefinition#field_def.name,
+    Number = FieldDefinition#field_def.number,
+    Field = #field{
+        name   = Name,
+        number = Number,
+        type   = FieldDefinition#field_def.type,
+        value4key = Value4Key,
+        value4description = Value4Description},
+    Acc = {
+        Field4Name#{ Name => Field },
+        Field4Number#{ Number => Field}
+    },
+    construct_fields(Acc, Rest).
+
+
+construct_cmponents(Acc, _F4Name, []) -> Acc;
+construct_cmponents({C4Name, G4Name}, F4Name, [ComponentRef | Rest]) ->
+    #component_ref{ name = Name, composites = CompositeRefs } = ComponentRef,
+    1.
+    %construct_cmponents([Component | Acc], Rest)
+
+
+construct(Map) ->
+    FieldDefinitions = maps:get(fields, Map),
+    ComponentDefinitions = maps:get(fields, Map),
+    {Field4Name, Field4Number} = construct_fields({ #{}, #{}}, FieldDefinitions),
+    Field4Name.
+
 load(Path) ->
     case file:read_file(Path) of
         {ok, Bin} ->
-          {ok, _, _} = erlsom:parse_sax(Bin, #{}, fun callback/2);
+          {ok, Map, _} = erlsom:parse_sax(Bin, #{}, fun callback/2),
+          Protocol = construct(Map),
+          Protocol;
         Error ->
           Error
     end.
