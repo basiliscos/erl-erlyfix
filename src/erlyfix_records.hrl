@@ -9,17 +9,31 @@
     name      :: string(),
     required  :: true|false
 }).
+
+-record(value_def, {
+    key         :: string(),
+    description :: string()
+}).
+-type value_def() :: #value_def{}.
+
 -record(field_def, {
     name      :: string(),
     number    :: integer(),
     type      :: string(),
-    values    :: [string()]
+    values    :: [value_def()]
 }).
+
 
 -record(component_ref, {
     name       :: string(),
     composites :: [composite_ref()]
 }).
+
+-record(group_ref, {
+    name       :: string(),
+    composites :: [composite_ref()]
+}).
+
 
 -type field_ref() :: #field_ref{}.
 -type composite_ref() :: field_ref().

@@ -40,29 +40,37 @@ callback(Event, Acc) ->
         {startElement,[],"fields",[],[]} -> [ [] | Acc ];
         {endElement,[],"fields",[]} -> [H | T] = Acc, T#{ fields => H };
         {startElement, [], "field", [], Attributes} ->
-            %io:format("~p~n", [Event]),
+            [H | T] = Acc,
             {ok, Name} = find_attr("name", Attributes),
             case find_attr("required", Attributes) of
-                {ok, Value} ->
+                {ok, Value} ->                      % field reference
                     Required = case Value of
                         "Y" -> true;
                         "N" -> false
                     end,
                     FieldRef = #field_ref{ name = Name, required = Required },
-                    [H | T] = Acc,
-                    [ [ FieldRef | H] | T ];
-                {not_found} ->
-                    %{ok, Number} = find_attr("number", Attributes),
-                    %{ok, Type} = find_attr("type", Attributes),
-                    % [ [[], field_def, Number, Type | H] | T ];
-                    Acc
+                    [ {field_ref, FieldRef}, H | T ];
+                {not_found} ->                      % field definition
+                    {ok, Number} = find_attr("number", Attributes),
+                    {ok, Type} = find_attr("type", Attributes),
+                    [ [], {field_def, Name, Number, Type, H} | T ]
+                    %Acc
             end;
-        %{endElement,[],"field",[]} ->
-        %    [Tag | Acc1] = Acc
-        %    case Tag
-        %        field_ref ->
-        %            [FieldRef,  | H]
-
+        {endElement,[],"field",[]} ->
+            [F, H | T] = Acc,
+            case is_list(F) of
+                false ->                            % field reference
+                    {field_ref, FieldRef} = F,
+                    [ [FieldRef | H] | T ];
+                true ->                             % field definition
+                    {field_def, Name, Number, Type, H2} = H,
+                    FieldDef = #field_def {
+                        name = Name,
+                        number = Number,
+                        type = Type,
+                        values = F},
+                    [ [FieldDef | H2] | T ]
+            end;
         {startElement, [], "message", [], Attributes} ->
             %io:format("message :: ~p~n", [Attributes]),
             {ok, Name} = find_attr("name", Attributes),
@@ -86,6 +94,20 @@ callback(Event, Acc) ->
             ComponentRef = #component_ref { name = Name, composites = Composites},
             [H | T1] = Acc1,
             [ [ComponentRef | H] | T1 ];
+        {startElement, [], "group", [], Attributes} ->
+            {ok, Name} = find_attr("name", Attributes),
+            [ [], Name | Acc ];
+        {endElement,[],"group",[]} ->
+            [Composites, Name | Acc1] = Acc,
+            GroupRef = #group_ref { name = Name, composites = Composites},
+            [H | T1] = Acc1,
+            [ [GroupRef | H] | T1 ];
+        {startElement, [], "value", [], Attributes} ->
+            {ok, Key} = find_attr("enum", Attributes),
+            {ok, Description} = find_attr("description", Attributes),
+            ValueDef = #value_def{ key = Key, description = Description},
+            [H | T] = Acc,
+            [ [ValueDef | H] | T ];
         _ -> Acc
     end.
 
@@ -96,6 +118,3 @@ load(Path) ->
         Error ->
           Error
     end.
-%    {XML, [] } = xmerl_scan:file(Path),
-%    {xmlElement,fix,fix, _, _, _, _, Elements, _, _, _, _} = XML,
-%    Elements.
