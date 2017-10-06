@@ -120,9 +120,9 @@ callback(Event, Acc) ->
             [ [], Name | Acc ];
         {endElement,[],"group",[]} ->
             [Composites, Name | Acc1] = Acc,
-            GroupRef = #group_ref { name = Name, composites = Composites},
+            GroupDef = #group_def { name = Name, composites = Composites},
             [H | T1] = Acc1,
-            [ [GroupRef | H] | T1 ];
+            [ [GroupDef | H] | T1 ];
         {startElement, [], "value", [], Attributes} ->
             {ok, Key} = find_attr("enum", Attributes),
             {ok, Description} = find_attr("description", Attributes),

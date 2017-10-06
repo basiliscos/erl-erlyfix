@@ -27,6 +27,12 @@
 }).
 -type component_def() :: #component_def{}.
 
+-record(group_def, {
+    name       :: string(),
+    composites :: [composite_ref()],
+    required   :: true|false
+}).
+-type group_def() :: #group_def{}.
 
 %% References
 
@@ -42,14 +48,8 @@
 }).
 -type component_ref() :: #component_ref{}.
 
--record(group_ref, {
-    name       :: string(),
-    composites :: [composite_ref()],
-    required   :: true|false
-}).
--type group_ref() :: #group_ref{}.
 
--type composite_ref() :: field_ref() | group_ref() | component_ref().
+-type composite_ref() :: field_ref() | group_def() | component_ref().
 
 -record(message_ref, {
     name       :: string(),
