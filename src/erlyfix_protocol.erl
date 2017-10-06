@@ -18,13 +18,13 @@ find_attr(Name, Attributes) ->
 find_required(Attributes) ->
     case find_attr("required", Attributes) of
         {ok, Value} ->
-            Required = case Value of
+            case Value of
                 "Y" -> {ok, true};
                 "N" -> {ok, false}
             end;
         {not_found} -> {not_found}
     end.
-%
+
 callback(Event, Acc) ->
     %io:format("~p~n", [Event]),
     case Event of
@@ -117,10 +117,11 @@ callback(Event, Acc) ->
             end;
         {startElement, [], "group", [], Attributes} ->
             {ok, Name} = find_attr("name", Attributes),
-            [ [], Name | Acc ];
+            {ok, Reqired} = find_required(Attributes),
+            [ [], {group_def, Name, Reqired} | Acc ];
         {endElement,[],"group",[]} ->
-            [Composites, Name | Acc1] = Acc,
-            GroupDef = #group_def { name = Name, composites = Composites},
+            [Composites, {group_def, Name, Required} | Acc1] = Acc,
+            GroupDef = #group_def { name = Name, required = Required, composites = Composites},
             [H | T1] = Acc1,
             [ [GroupDef | H] | T1 ];
         {startElement, [], "value", [], Attributes} ->
@@ -183,7 +184,7 @@ construct_components({C4Name, G4Name}, F4Name, Queue) ->
             #component_def{ name = Name, composites = SubCompositeRefs } = ComponentRef,
             case get_composites([], Lookup, SubCompositeRefs) of
                 {ok, Values} ->
-                    1;
+                    1 = 2;
                 not_found ->
                     Q2 = queue:in(ComponentRef, Queue),
                     construct_components({C4Name, G4Name}, F4Name, Q2)
