@@ -19,6 +19,14 @@
     type      :: string(),
     values    :: [value_def()]
 }).
+-type field_def() :: #field_def{}.
+
+-record(component_def, {
+    name       :: string(),
+    composites :: [composite_ref()]
+}).
+-type component_def() :: #component_def{}.
+
 
 %% References
 
@@ -30,13 +38,14 @@
 
 -record(component_ref, {
     name       :: string(),
-    composites :: [composite_ref()]
+    required   :: true|false
 }).
 -type component_ref() :: #component_ref{}.
 
 -record(group_ref, {
     name       :: string(),
-    composites :: [composite_ref()]
+    composites :: [composite_ref()],
+    required   :: true|false
 }).
 -type group_ref() :: #group_ref{}.
 
@@ -65,6 +74,15 @@
     composite4name      :: map(),
     mandatoryComposites :: map()
 }).
+-type component() :: #component{}.
+
+-record(group, {
+    name                :: string(),
+    composite4name      :: map(),
+    mandatoryComposites :: map()
+}).
+-type group() :: #group{}.
+
 
 -record(protocol, {
     field4number        :: map(),

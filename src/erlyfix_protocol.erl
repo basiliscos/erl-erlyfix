@@ -15,6 +15,16 @@ find_attr(Name, Attributes) ->
         _ -> {not_found}
     end.
 
+find_required(Attributes) ->
+    case find_attr("required", Attributes) of
+        {ok, Value} ->
+            Required = case Value of
+                "Y" -> {ok, true};
+                "N" -> {ok, false}
+            end;
+        {not_found} -> {not_found}
+    end.
+%
 callback(Event, Acc) ->
     %io:format("~p~n", [Event]),
     case Event of
@@ -42,15 +52,11 @@ callback(Event, Acc) ->
         {startElement, [], "field", [], Attributes} ->
             [H | T] = Acc,
             {ok, Name} = find_attr("name", Attributes),
-            case find_attr("required", Attributes) of
-                {ok, Value} ->                      % field reference
-                    Required = case Value of
-                        "Y" -> true;
-                        "N" -> false
-                    end,
+            case find_required(Attributes) of
+                {ok, Required} ->                   % reference
                     FieldRef = #field_ref{ name = Name, required = Required },
                     [ {field_ref, FieldRef}, H | T ];
-                {not_found} ->                      % field definition
+                {not_found} ->                      % definition
                     {ok, Number} = find_attr("number", Attributes),
                     {ok, Type} = find_attr("type", Attributes),
                     [ [], {field_def, Name, Number, Type, H} | T ]
@@ -59,10 +65,10 @@ callback(Event, Acc) ->
         {endElement,[],"field",[]} ->
             [F, H | T] = Acc,
             case is_list(F) of
-                false ->                            % field reference
+                false ->                            % reference
                     {field_ref, FieldRef} = F,
                     [ [FieldRef | H] | T ];
-                true ->                             % field definition
+                true ->                             % definition
                     {field_def, Name, Number, Type, H2} = H,
                     FieldDef = #field_def {
                         name = Name,
@@ -87,13 +93,28 @@ callback(Event, Acc) ->
             [H | T1] = Acc1,
             [ [MessageRef | H] | T1 ];
         {startElement, [], "component", [], Attributes} ->
+            [H | T] = Acc,
             {ok, Name} = find_attr("name", Attributes),
-            [ [], Name | Acc ];
+            case find_required(Attributes) of
+                {ok, Required} ->                   % reference
+                    ComponentRef = #component_ref{ name = Name, required = Required },
+                    [ {component_ref, ComponentRef}, H | T ];
+                {not_found} ->                      % definition
+                    [ [], {component_def, Name, H} | T ]
+            end;
         {endElement,[],"component",[]} ->
-            [Composites, Name | Acc1] = Acc,
-            ComponentRef = #component_ref { name = Name, composites = Composites},
-            [H | T1] = Acc1,
-            [ [ComponentRef | H] | T1 ];
+            [F, H | T] = Acc,
+            case is_list(F) of
+                false ->                            % reference
+                    {component_ref, ComponentRef} = F,
+                    [ [ComponentRef | H] | T ];
+                true ->                             % definition
+                    {component_def, Name, H2} = H,
+                    ComponentDef = #component_def {
+                        name = Name,
+                        composites = F},
+                    [ [ComponentDef | H2] | T ]
+            end;
         {startElement, [], "group", [], Attributes} ->
             {ok, Name} = find_attr("name", Attributes),
             [ [], Name | Acc ];
@@ -140,26 +161,50 @@ construct_fields({Field4Name, Field4Number}, [FieldDefinition | Rest]) ->
     },
     construct_fields(Acc, Rest).
 
+get_composites(Acc, _Lookup, []) -> {ok, Acc};
+get_composites(Acc, L, [H | T]) ->
+    {C4Name, G4Name, F4Name} = L,
+    {Name, Lookup} = case element(1, H) of
+        component -> {H#component.name, C4Name};
+        group     -> {H#group.name, G4Name};
+        field     -> {H#field.name, F4Name}
+    end,
+    case maps:find(Name, Lookup) of
+        {ok, Composite} -> get_composites([{Name, Composite} | Acc], L, T);
+        error -> not_found
+    end.
 
-construct_cmponents(Acc, _F4Name, []) -> Acc;
-construct_cmponents({C4Name, G4Name}, F4Name, [ComponentRef | Rest]) ->
-    #component_ref{ name = Name, composites = CompositeRefs } = ComponentRef,
-    1.
-    %construct_cmponents([Component | Acc], Rest)
+construct_components({C4Name, G4Name}, F4Name, Queue) ->
+    Lookup = {C4Name, G4Name, F4Name},
+    case queue:is_empty(Queue) of
+        true -> {C4Name, G4Name};
+        false ->
+            { {value, ComponentRef}, QLeft} = queue:out(Queue),
+            #component_def{ name = Name, composites = SubCompositeRefs } = ComponentRef,
+            case get_composites([], Lookup, SubCompositeRefs) of
+                {ok, Values} ->
+                    1;
+                not_found ->
+                    Q2 = queue:in(ComponentRef, Queue),
+                    construct_components({C4Name, G4Name}, F4Name, Q2)
+            end
+    end.
 
 
 construct(Map) ->
     FieldDefinitions = maps:get(fields, Map),
     ComponentDefinitions = maps:get(fields, Map),
     {Field4Name, Field4Number} = construct_fields({ #{}, #{}}, FieldDefinitions),
+    ComponentsQueue = queue:from_list(ComponentDefinitions),
     Field4Name.
 
 load(Path) ->
     case file:read_file(Path) of
         {ok, Bin} ->
           {ok, Map, _} = erlsom:parse_sax(Bin, #{}, fun callback/2),
-          Protocol = construct(Map),
-          Protocol;
+          %Protocol = construct(Map),
+          %Protocol;
+          Map;
         Error ->
           Error
     end.
