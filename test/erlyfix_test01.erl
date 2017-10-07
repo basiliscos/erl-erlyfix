@@ -76,4 +76,14 @@ protocol_load_test() ->
     {ok, _F_SignatureLength} = maps:find("SignatureLength", Trailer#trailer.composite4name),
     ?assertEqual(error, maps:find("SignatureLength", Trailer#trailer.mandatoryComposites)),
     {ok, F_CheckSum} = maps:find("CheckSum", Trailer#trailer.composite4name),
-    ?assertEqual(F_CheckSum, maps:get("CheckSum", Trailer#trailer.mandatoryComposites)).
+    ?assertEqual(F_CheckSum, maps:get("CheckSum", Trailer#trailer.mandatoryComposites)),
+
+    % message
+    {ok, M_Logon} = erlyfix_protocol:lookup(P, {message, by_name, "Logon" }),
+    ?assertEqual("Logon", M_Logon#message.name),
+    ?assertEqual("A", M_Logon#message.type),
+    ?assertEqual("admin", M_Logon#message.category),
+    {ok, F_EncryptMethod} = maps:find("EncryptMethod", M_Logon#message.composite4name),
+    {ok, F_EncryptMethod} = maps:find("EncryptMethod", M_Logon#message.mandatoryComposites),
+    {ok, _G_NoMsgTypes} = maps:find("NoMsgTypes", M_Logon#message.composite4name),
+    ?assertEqual(error, maps:find("NoMsgTypes", M_Logon#message.mandatoryComposites)).

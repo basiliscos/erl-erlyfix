@@ -95,6 +95,15 @@
 }).
 -type trailer() :: #trailer{}.
 
+-record(message, {
+    name                :: string(),
+    type                :: string(),
+    category            :: string(),
+    composite4name      :: map(),
+    mandatoryComposites :: map()
+}).
+-type message() :: #message{}.
+
 
 -record(protocol, {
     protocol_version    :: protocol_version(),
@@ -102,6 +111,8 @@
     trailer             :: header(),
     field4number        :: map(),
     field4name          :: map(),
-    component4name      :: map()
+    component4name      :: map(),
+    message4name        :: map(),
+    message4type        :: map()
 }).
 

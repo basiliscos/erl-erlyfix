@@ -234,6 +234,21 @@ construct_components(C4Name, F4Name, Queue) ->
             end
     end.
 
+construct_messages(Acc, _C4Name, _F4Name, []) -> Acc;
+construct_messages({M4Name, M4Type}, C4Name, F4Name, [H | T]) ->
+    #message_ref { name = Name, type = Type, category = Category, composites = CompositeRefs} = H,
+    {ok, SubCompositesNames} = get_composites([], C4Name, F4Name, CompositeRefs),
+    {Co4Name, MC} = zip(CompositeRefs, SubCompositesNames),
+    Message = #message {
+        name = Name,
+        type = Type,
+        category = Category,
+        composite4name = Co4Name,
+        mandatoryComposites = MC
+    },
+    M4NameNew = M4Name#{ Name => Message},
+    M4TypeNew = M4Type#{ Type => Message},
+    construct_messages({M4NameNew, M4TypeNew}, C4Name, F4Name, T).
 
 construct(Map) ->
     % fields
@@ -257,13 +272,19 @@ construct(Map) ->
     {T_C4Name, T_MC} = zip(TrailerRefs, TrailerCompositeNames),
     Trailer = #trailer{ composite4name = T_C4Name, mandatoryComposites = T_MC },
 
+    % messages
+    MessagesRefs = maps:get(messages, Map),
+    {M4Name, M4Type} = construct_messages({#{}, #{}}, C4Name, Field4Name, MessagesRefs),
+
     #protocol{
         protocol_version = maps:get(version, Map),
         header           = Header,
         trailer          = Trailer,
         field4name       = Field4Name,
         field4number     = Field4Number,
-        component4name   = C4Name}.
+        component4name   = C4Name,
+        message4name     = M4Name,
+        message4type     = M4Type}.
 
 %% Interface method
 
@@ -299,5 +320,18 @@ lookup(Protocol, {component, K}) ->
     case maps:find(K, L) of
         {ok, C} -> {ok, C};
         error -> not_found
-    end.
+    end;
 
+lookup(Protocol, {message, by_name, K}) ->
+    L = Protocol#protocol.message4name,
+    case maps:find(K, L) of
+        {ok, Field} -> {ok, Field};
+        error -> not_found
+    end;
+
+lookup(Protocol, {message, by_type, K}) ->
+    L = Protocol#protocol.message4type,
+    case maps:find(K, L) of
+        {ok, Field} -> {ok, Field};
+        error -> not_found
+    end.
