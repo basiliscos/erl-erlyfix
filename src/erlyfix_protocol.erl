@@ -236,14 +236,31 @@ construct_components(C4Name, F4Name, Queue) ->
 
 
 construct(Map) ->
+    % fields
     FieldDefinitions = maps:get(fields, Map),
     ComponentDefinitions = maps:get(components, Map),
     {Field4Name, Field4Number} = construct_fields({ #{}, #{}}, FieldDefinitions),
+
+    % components
     ComponentsQueue = queue:from_list(ComponentDefinitions),
     C4Name = construct_components(#{}, Field4Name, ComponentsQueue),
 
+    % header
+    HeaderRefs = maps:get(header, Map),
+    {ok, HeaderCompositeNames} = get_composites([], C4Name, Field4Name, HeaderRefs),
+    {H_C4Name, H_MC} = zip(HeaderRefs, HeaderCompositeNames),
+    Header = #header{ composite4name = H_C4Name, mandatoryComposites = H_MC },
+
+    % trailer
+    TrailerRefs = maps:get(trailer, Map),
+    {ok, TrailerCompositeNames} = get_composites([], C4Name, Field4Name, TrailerRefs),
+    {T_C4Name, T_MC} = zip(TrailerRefs, TrailerCompositeNames),
+    Trailer = #trailer{ composite4name = T_C4Name, mandatoryComposites = T_MC },
+
     #protocol{
         protocol_version = maps:get(version, Map),
+        header           = Header,
+        trailer          = Trailer,
         field4name       = Field4Name,
         field4number     = Field4Number,
         component4name   = C4Name}.

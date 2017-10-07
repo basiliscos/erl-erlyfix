@@ -83,11 +83,25 @@
 }).
 -type group() :: #group{}.
 
+-record(header, {
+    composite4name      :: map(),
+    mandatoryComposites :: map()
+}).
+-type header() :: #header{}.
+
+-record(trailer, {
+    composite4name      :: map(),
+    mandatoryComposites :: map()
+}).
+-type trailer() :: #trailer{}.
+
 
 -record(protocol, {
+    protocol_version    :: protocol_version(),
+    header              :: header(),
+    trailer             :: header(),
     field4number        :: map(),
     field4name          :: map(),
-    component4name      :: map(),
-    protocol_version    :: protocol_version()
+    component4name      :: map()
 }).
 

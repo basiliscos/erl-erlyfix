@@ -62,4 +62,18 @@ protocol_load_test() ->
     % component with mandatory group
     {ok, C_CpctyConfGrp} = erlyfix_protocol:lookup(P, {component, "CpctyConfGrp" }),
     {ok, G_NoCapacities} = maps:find("NoCapacities", C_CpctyConfGrp#component.composite4name),
-    ?assertEqual(G_NoCapacities, maps:get("NoCapacities", C_CpctyConfGrp#component.mandatoryComposites)).
+    ?assertEqual(G_NoCapacities, maps:get("NoCapacities", C_CpctyConfGrp#component.mandatoryComposites)),
+
+    % header
+    Header = P#protocol.header,
+    {ok, F_BeginString} = maps:find("BeginString", Header#header.composite4name),
+    ?assertEqual(F_BeginString, maps:get("BeginString", Header#header.mandatoryComposites)),
+    {ok, _C_Hop} = maps:find("Hop", Header#header.composite4name),
+    ?assertEqual(error, maps:find("Hop", Header#header.mandatoryComposites)),
+
+    % trailer
+    Trailer = P#protocol.trailer,
+    {ok, _F_SignatureLength} = maps:find("SignatureLength", Trailer#trailer.composite4name),
+    ?assertEqual(error, maps:find("SignatureLength", Trailer#trailer.mandatoryComposites)),
+    {ok, F_CheckSum} = maps:find("CheckSum", Trailer#trailer.composite4name),
+    ?assertEqual(F_CheckSum, maps:get("CheckSum", Trailer#trailer.mandatoryComposites)).
