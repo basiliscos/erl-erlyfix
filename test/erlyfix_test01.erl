@@ -32,6 +32,34 @@ protocol_load_test() ->
     %?debugFmt("value4description == ~p", [F_AdvSide#field.value4description]),
     {ok, _V_SELL} = maps:find("SELL", F_AdvSide#field.value4description),
     {ok, _V_CROSS} = maps:find("CROSS", F_AdvSide#field.value4description),
-    {ok, _V_TRADE} = maps:find("TRADE", F_AdvSide#field.value4description).
+    {ok, _V_TRADE} = maps:find("TRADE", F_AdvSide#field.value4description),
 
+    % simple component
+    {ok, C_CommissionData} = erlyfix_protocol:lookup(P, {component, "CommissionData" }),
+    ?assertEqual("CommissionData", C_CommissionData#component.name),
+    ?assertEqual("CommissionData", C_CommissionData#component.name),
+    {ok, _F_Commission} = maps:find("Commission", C_CommissionData#component.composite4name),
+    {ok, _F_CommType} = maps:find("CommType", C_CommissionData#component.composite4name),
+    {ok, _F_CommCurrency} = maps:find("CommCurrency", C_CommissionData#component.composite4name),
+    {ok, _F_FundRenewWaiv} = maps:find("FundRenewWaiv", C_CommissionData#component.composite4name),
 
+    % component with group
+    {ok, C_Stipulations} = erlyfix_protocol:lookup(P, {component, "Stipulations" }),
+    {ok, G_NoStipulations} = maps:find("NoStipulations", C_Stipulations#component.composite4name),
+    ?assertEqual(error, maps:find("NoStipulations", C_Stipulations#component.mandatoryComposites)),
+    ?assertEqual("NoStipulations", G_NoStipulations#group.name),
+    {ok, _F_StipulationType} = maps:find("StipulationType", G_NoStipulations#group.composite4name),
+    {ok, _F_StipulationValue} = maps:find("StipulationValue", G_NoStipulations#group.composite4name),
+
+    % component with group with component
+    {ok, C_NestedParties} = erlyfix_protocol:lookup(P, {component, "NestedParties" }),
+    {ok, G_NoNestedPartyIDs} = maps:find("NoNestedPartyIDs", C_NestedParties#component.composite4name),
+    {ok, C_NstdPtysSubGrp} = maps:find("NstdPtysSubGrp", G_NoNestedPartyIDs#group.composite4name),
+    {ok, G_NoNestedPartySubIDs} = maps:find("NoNestedPartySubIDs", C_NstdPtysSubGrp#component.composite4name),
+    {ok, _F_NestedPartySubID} = maps:find("NestedPartySubID", G_NoNestedPartySubIDs#group.composite4name),
+    {ok, _F_NestedPartySubIDType} = maps:find("NestedPartySubIDType", G_NoNestedPartySubIDs#group.composite4name),
+
+    % component with mandatory group
+    {ok, C_CpctyConfGrp} = erlyfix_protocol:lookup(P, {component, "CpctyConfGrp" }),
+    {ok, G_NoCapacities} = maps:find("NoCapacities", C_CpctyConfGrp#component.composite4name),
+    ?assertEqual(G_NoCapacities, maps:get("NoCapacities", C_CpctyConfGrp#component.mandatoryComposites)).

@@ -275,6 +275,12 @@ lookup(Protocol, {field, by_number, K}) ->
     case maps:find(K, L) of
         {ok, Field} -> {ok, Field};
         error -> not_found
-    end.
+    end;
 
+lookup(Protocol, {component, K}) ->
+    L = Protocol#protocol.component4name,
+    case maps:find(K, L) of
+        {ok, C} -> {ok, C};
+        error -> not_found
+    end.
 
