@@ -301,36 +301,14 @@ load(Path) ->
 version(Protocol)-> Protocol#protocol.protocol_version.
 
 % lookup
-lookup(Protocol, {field, by_name, K}) ->
-    L = Protocol#protocol.field4name,
-    case maps:find(K, L) of
-        {ok, Field} -> {ok, Field};
-        error -> not_found
-    end;
-
-lookup(Protocol, {field, by_number, K}) ->
-    L = Protocol#protocol.field4number,
-    case maps:find(K, L) of
-        {ok, Field} -> {ok, Field};
-        error -> not_found
-    end;
-
-lookup(Protocol, {component, K}) ->
-    L = Protocol#protocol.component4name,
-    case maps:find(K, L) of
-        {ok, C} -> {ok, C};
-        error -> not_found
-    end;
-
-lookup(Protocol, {message, by_name, K}) ->
-    L = Protocol#protocol.message4name,
-    case maps:find(K, L) of
-        {ok, Field} -> {ok, Field};
-        error -> not_found
-    end;
-
-lookup(Protocol, {message, by_type, K}) ->
-    L = Protocol#protocol.message4type,
+lookup(Protocol, Criterium) ->
+    {K, L} = case Criterium of
+        {field, by_name, K} -> {K, Protocol#protocol.field4name};
+        {field, by_number, K} -> {K, Protocol#protocol.field4number};
+        {component, K} -> {K, Protocol#protocol.component4name};
+        {message, by_name, K} -> {K, Protocol#protocol.message4name};
+        {message, by_type, K} -> {K, Protocol#protocol.message4type}
+    end,
     case maps:find(K, L) of
         {ok, Field} -> {ok, Field};
         error -> not_found
