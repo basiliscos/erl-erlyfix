@@ -1,7 +1,9 @@
 -module(erlyfix_protocol).
 -include("erlyfix_records.hrl").
 
--export([load/1]).
+-export([load/1, version/1, lookup/2]).
+
+%% XML-parsing
 
 find_attr(Name, Attributes) ->
     F = fun(I) ->
@@ -133,6 +135,8 @@ callback(Event, Acc) ->
         _ -> Acc
     end.
 
+%% Constuction
+
 map_values(Acc, []) -> Acc;
 map_values({Value4Key, Value4Description}, [Value | Rest]) ->
     K = Value#value_def.key,
@@ -162,50 +166,115 @@ construct_fields({Field4Name, Field4Number}, [FieldDefinition | Rest]) ->
     },
     construct_fields(Acc, Rest).
 
-get_composites(Acc, _Lookup, []) -> {ok, Acc};
-get_composites(Acc, L, [H | T]) ->
-    {C4Name, G4Name, F4Name} = L,
-    {Name, Lookup} = case element(1, H) of
-        component -> {H#component.name, C4Name};
-        group     -> {H#group.name, G4Name};
-        field     -> {H#field.name, F4Name}
+construct_composite_mapping({Co4Name, MC}, []) -> {Co4Name, MC};
+construct_composite_mapping({Co4Name, MC}, [{Ref, Def} | T ]) ->
+    {Name, Required} = case element(1, Ref) of
+        field_ref -> { Ref#field_ref.name, Ref#field_ref.required };
+        component_ref -> { Ref#component_ref.name, Ref#component_ref.required };
+        group_def -> { Ref#group_def.name, Ref#group_def.required }
     end,
-    case maps:find(Name, Lookup) of
-        {ok, Composite} -> get_composites([{Name, Composite} | Acc], L, T);
-        error -> not_found
+    Co4NameNew = Co4Name#{ Name => Def },
+    MCNew = case Required of
+        true -> MC#{ Name => Def};
+        false -> MC
+    end,
+    construct_composite_mapping({Co4NameNew, MCNew}, T).
+
+zip(Refs, ReverseDefNames) ->
+    F = fun({_Name, Composite}) -> Composite end,
+    Defs = lists:reverse( lists:map(F, ReverseDefNames)),
+    RefsDefs = lists:zip(Refs, Defs),
+    {Co4Name, MC} = construct_composite_mapping({ #{}, #{} }, RefsDefs),
+    {Co4Name, MC}.
+
+get_composites(Acc, _C4Name, _F4Name, []) -> {ok, Acc};
+get_composites(Acc, C4Name, F4Name, [H | T]) ->
+    case element(1, H) of
+        component_ref ->
+            Name = H#component_ref.name,
+            case maps:find(Name, C4Name) of
+                {ok, Composite} -> get_composites([{Name, Composite} | Acc], C4Name, F4Name, T);
+                error -> not_found
+            end;
+        field_ref ->
+            Name = H#field_ref.name,
+            case maps:find(Name, F4Name) of
+                {ok, Composite} -> get_composites([{Name, Composite} | Acc], C4Name, F4Name, T);
+                error -> not_found
+            end;
+        group_def ->
+            Name = H#group_def.name,
+            CompositeRefs = H#group_def.composites,
+            case get_composites([], C4Name, F4Name, CompositeRefs) of
+                {ok, SubCompositesNames} ->
+                    {Co4Name, MC} = zip(CompositeRefs, SubCompositesNames),
+                    Composite = #group{ name = Name, composite4name = Co4Name, mandatoryComposites = MC},
+                    get_composites([{Name, Composite} | Acc], C4Name, F4Name, T);
+                not_found -> not_found
+            end
     end.
 
-construct_components({C4Name, G4Name}, F4Name, Queue) ->
-    Lookup = {C4Name, G4Name, F4Name},
+construct_components(C4Name, F4Name, Queue) ->
     case queue:is_empty(Queue) of
-        true -> {C4Name, G4Name};
+        true -> C4Name;
         false ->
             { {value, ComponentRef}, QLeft} = queue:out(Queue),
+            %io:format("trying to construct composite ~p~n", [ComponentRef]),
             #component_def{ name = Name, composites = SubCompositeRefs } = ComponentRef,
-            case get_composites([], Lookup, SubCompositeRefs) of
-                {ok, Values} ->
-                    1 = 2;
+            case get_composites([], C4Name, F4Name, SubCompositeRefs) of
+                {ok, SubCompositesNames} ->
+                    %io:format("found subcomposites ~p :: ~p~n", [ComponentRef, SubCompositesNames]),
+                    {Co4Name, MC} = zip(SubCompositeRefs, SubCompositesNames),
+                    Composite = #component{ name = Name, composite4name = Co4Name, mandatoryComposites = MC},
+                    C4NameNew = C4Name#{ Name => Composite },
+                    construct_components(C4NameNew, F4Name, QLeft);
                 not_found ->
-                    Q2 = queue:in(ComponentRef, Queue),
-                    construct_components({C4Name, G4Name}, F4Name, Q2)
+                    Q2 = queue:in(ComponentRef, QLeft),
+                    construct_components(C4Name, F4Name, Q2)
             end
     end.
 
 
 construct(Map) ->
     FieldDefinitions = maps:get(fields, Map),
-    ComponentDefinitions = maps:get(fields, Map),
+    ComponentDefinitions = maps:get(components, Map),
     {Field4Name, Field4Number} = construct_fields({ #{}, #{}}, FieldDefinitions),
     ComponentsQueue = queue:from_list(ComponentDefinitions),
-    Field4Name.
+    C4Name = construct_components(#{}, Field4Name, ComponentsQueue),
+
+    #protocol{
+        protocol_version = maps:get(version, Map),
+        field4name       = Field4Name,
+        field4number     = Field4Number,
+        component4name   = C4Name}.
+
+%% Interface method
 
 load(Path) ->
     case file:read_file(Path) of
         {ok, Bin} ->
           {ok, Map, _} = erlsom:parse_sax(Bin, #{}, fun callback/2),
-          %Protocol = construct(Map),
-          %Protocol;
-          Map;
-        Error ->
-          Error
+          Protocol = construct(Map),
+          Protocol;
+          %Map;
+        Error -> Error
     end.
+
+version(Protocol)-> Protocol#protocol.protocol_version.
+
+% lookup
+lookup(Protocol, {field, by_name, K}) ->
+    L = Protocol#protocol.field4name,
+    case maps:find(K, L) of
+        {ok, Field} -> {ok, Field};
+        error -> not_found
+    end;
+
+lookup(Protocol, {field, by_number, K}) ->
+    L = Protocol#protocol.field4number,
+    case maps:find(K, L) of
+        {ok, Field} -> {ok, Field};
+        error -> not_found
+    end.
+
+
