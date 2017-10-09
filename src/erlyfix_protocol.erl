@@ -1,7 +1,7 @@
 -module(erlyfix_protocol).
 -include("erlyfix_records.hrl").
 
--export([load/1, version/1, lookup/2]).
+-export([load/1, version/1, lookup/2, serialize/3]).
 
 %% XML-parsing
 
@@ -312,4 +312,13 @@ lookup(Protocol, Criterium) ->
     case maps:find(K, L) of
         {ok, Field} -> {ok, Field};
         error -> not_found
+    end.
+
+serialize_message(Protocol, Message, MessageFields) ->
+    1.
+
+serialize(Protocol, MessageName, MessageFields) ->
+    case maps:find(MessageName, Protocol#protocol.message4name) of
+        {ok, Message} -> serialize_message(Protocol, Message, MessageFields);
+        error -> {error, 'Message not found'}
     end.
