@@ -5,7 +5,7 @@
 
 %% XML-parsing
 
-find_attr(Name, Attributes) ->
+find_attr(Name, Attributes, Fn) ->
     F = fun(I) ->
         case I of
              {attribute,Name, _, _, _} -> true;
@@ -13,12 +13,12 @@ find_attr(Name, Attributes) ->
          end
     end,
     case lists:filter(F, Attributes) of
-        [{attribute,Name, _, _, Value}] -> {ok, Value};
+        [{attribute,Name, _, _, Value}] -> {ok, Fn(Value)};
         _ -> {not_found}
     end.
 
 find_required(Attributes) ->
-    case find_attr("required", Attributes) of
+    case find_attr("required", Attributes, fun(X) -> X end) of
         {ok, Value} ->
             case Value of
                 "Y" -> {ok, true};
@@ -32,14 +32,14 @@ callback(Event, Acc) ->
     case Event of
         {startElement, [], "fix", [], Attributes} ->
             %io:format("~p~n", [Acc]),
-            {ok, Minor} = find_attr("minor", Attributes),
-            {ok, Major} = find_attr("major", Attributes),
-            {ok, Servicepack} = find_attr("servicepack", Attributes),
-            {ok,"FIX"} = find_attr("type", Attributes),
+            {ok, Minor} = find_attr("minor", Attributes, fun erlang:list_to_integer/1),
+            {ok, Major} = find_attr("major", Attributes, fun erlang:list_to_integer/1),
+            {ok, Servicepack} = find_attr("servicepack", Attributes, fun erlang:list_to_integer/1),
+            {ok, 'FIX'} = find_attr("type", Attributes, fun erlang:list_to_atom/1),
             Version = #protocol_version {
-                major = list_to_integer(Major),
-                minor = list_to_integer(Minor),
-                servicepack = list_to_integer(Servicepack)},
+                major = Major,
+                minor = Minor,
+                servicepack = Servicepack},
             Acc#{ version => Version };
         {startElement,[],"header",[],[]} -> [ [] | Acc ];
         {endElement,[],"header",[]} -> [H | T] = Acc, T#{ header => H };
@@ -53,14 +53,14 @@ callback(Event, Acc) ->
         {endElement,[],"fields",[]} -> [H | T] = Acc, T#{ fields => H };
         {startElement, [], "field", [], Attributes} ->
             [H | T] = Acc,
-            {ok, Name} = find_attr("name", Attributes),
+            {ok, Name} = find_attr("name", Attributes, fun erlang:list_to_atom/1),
             case find_required(Attributes) of
                 {ok, Required} ->                   % reference
                     FieldRef = #field_ref{ name = Name, required = Required },
                     [ {field_ref, FieldRef}, H | T ];
                 {not_found} ->                      % definition
-                    {ok, Number} = find_attr("number", Attributes),
-                    {ok, Type} = find_attr("type", Attributes),
+                    {ok, Number} = find_attr("number", Attributes, fun erlang:list_to_atom/1),
+                    {ok, Type} = find_attr("type", Attributes, fun erlang:list_to_atom/1),
                     [ [], {field_def, Name, Number, Type, H} | T ]
                     %Acc
             end;
@@ -81,9 +81,9 @@ callback(Event, Acc) ->
             end;
         {startElement, [], "message", [], Attributes} ->
             %io:format("message :: ~p~n", [Attributes]),
-            {ok, Name} = find_attr("name", Attributes),
-            {ok, Type} = find_attr("msgtype", Attributes),
-            {ok, Category} = find_attr("msgcat", Attributes),
+            {ok, Name} = find_attr("name", Attributes, fun erlang:list_to_atom/1),
+            {ok, Type} = find_attr("msgtype", Attributes, fun erlang:list_to_atom/1),
+            {ok, Category} = find_attr("msgcat", Attributes, fun erlang:list_to_atom/1),
             [ [], Name, Type, Category | Acc ];
         {endElement,[],"message",[]} ->
             [Composites, Name, Type, Category | Acc1] = Acc,
@@ -96,7 +96,7 @@ callback(Event, Acc) ->
             [ [MessageRef | H] | T1 ];
         {startElement, [], "component", [], Attributes} ->
             [H | T] = Acc,
-            {ok, Name} = find_attr("name", Attributes),
+            {ok, Name} = find_attr("name", Attributes, fun erlang:list_to_atom/1),
             case find_required(Attributes) of
                 {ok, Required} ->                   % reference
                     ComponentRef = #component_ref{ name = Name, required = Required },
@@ -118,7 +118,7 @@ callback(Event, Acc) ->
                     [ [ComponentDef | H2] | T ]
             end;
         {startElement, [], "group", [], Attributes} ->
-            {ok, Name} = find_attr("name", Attributes),
+            {ok, Name} = find_attr("name", Attributes, fun erlang:list_to_atom/1),
             {ok, Reqired} = find_required(Attributes),
             [ [], {group_def, Name, Reqired} | Acc ];
         {endElement,[],"group",[]} ->
@@ -127,8 +127,8 @@ callback(Event, Acc) ->
             [H | T1] = Acc1,
             [ [GroupDef | H] | T1 ];
         {startElement, [], "value", [], Attributes} ->
-            {ok, Key} = find_attr("enum", Attributes),
-            {ok, Description} = find_attr("description", Attributes),
+            {ok, Key} = find_attr("enum", Attributes, fun erlang:list_to_atom/1),
+            {ok, Description} = find_attr("description", Attributes, fun erlang:list_to_binary/1),
             ValueDef = #value_def{ key = Key, description = Description},
             [H | T] = Acc,
             [ [ValueDef | H] | T ];
