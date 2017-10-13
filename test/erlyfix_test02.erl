@@ -7,7 +7,7 @@ load() ->
     Path = DirName ++ "FIX44.xml",
     erlyfix_protocol:load(Path).
 
-protocol_load_test() ->
+serialization_test() ->
     P = load(),
     {ok, IoList} = erlyfix_protocol:serialize(P, 'Logon', [
         {'SenderCompID', "From-me"},
@@ -15,4 +15,6 @@ protocol_load_test() ->
         {'Username', "Login"},
         {'Password', "Pass"},
         {'HeartBtInt', 20}
-    ]).
+    ]),
+    ?assertEqual(1, IoList).
+

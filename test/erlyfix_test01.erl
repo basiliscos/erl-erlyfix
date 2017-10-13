@@ -16,10 +16,10 @@ protocol_load_test() ->
     % simple field
     {ok, F_account_1} = erlyfix_protocol:lookup(P, {field, by_name, 'Account' }),
     ?assertEqual('Account', F_account_1#field.name),
-    ?assertEqual('1', F_account_1#field.number),
+    ?assertEqual(1, F_account_1#field.number),
     ?assertEqual(#{}, F_account_1#field.value4key),
     ?assertEqual(#{}, F_account_1#field.value4description),
-    {ok, F_account_2} = erlyfix_protocol:lookup(P, {field, by_number, '1' }),
+    {ok, F_account_2} = erlyfix_protocol:lookup(P, {field, by_number, 1 }),
     ?assertEqual(F_account_1, F_account_2),
 
     % field with values

@@ -108,7 +108,7 @@
 -record(protocol, {
     protocol_version    :: protocol_version(),
     header              :: header(),
-    trailer             :: header(),
+    trailer             :: trailer(),
     field4number        :: map(),
     field4name          :: map(),
     component4name      :: map(),

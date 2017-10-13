@@ -2,6 +2,8 @@
 -include("erlyfix_records.hrl").
 
 -export([load/1, version/1, lookup/2, serialize/3]).
+-define(SEPARATOR, <<1:8>>).
+-define(DEBUG(X), io:format("DEBUG ~p:~p ~p~n",[?MODULE, ?LINE, X])).
 
 %% XML-parsing
 
@@ -59,7 +61,7 @@ callback(Event, Acc) ->
                     FieldRef = #field_ref{ name = Name, required = Required },
                     [ {field_ref, FieldRef}, H | T ];
                 {not_found} ->                      % definition
-                    {ok, Number} = find_attr("number", Attributes, fun erlang:list_to_atom/1),
+                    {ok, Number} = find_attr("number", Attributes, fun erlang:list_to_integer/1),
                     {ok, Type} = find_attr("type", Attributes, fun erlang:list_to_atom/1),
                     [ [], {field_def, Name, Number, Type, H} | T ]
                     %Acc
@@ -303,22 +305,82 @@ version(Protocol)-> Protocol#protocol.protocol_version.
 % lookup
 lookup(Protocol, Criterium) ->
     {K, L} = case Criterium of
-        {field, by_name, K} -> {K, Protocol#protocol.field4name};
-        {field, by_number, K} -> {K, Protocol#protocol.field4number};
-        {component, K} -> {K, Protocol#protocol.component4name};
-        {message, by_name, K} -> {K, Protocol#protocol.message4name};
-        {message, by_type, K} -> {K, Protocol#protocol.message4type}
+        {field, by_name, X} -> {X, Protocol#protocol.field4name};
+        {field, by_number, X} -> {X, Protocol#protocol.field4number};
+        {component, X} -> {X, Protocol#protocol.component4name};
+        {message, by_name, X} -> {X, Protocol#protocol.message4name};
+        {message, by_type, X} -> {X, Protocol#protocol.message4type}
     end,
     case maps:find(K, L) of
         {ok, Field} -> {ok, Field};
         error -> not_found
     end.
 
+% decompose composite
+
+decompose(C) when is_record(C, field) -> {field, C};
+decompose(C) when is_record(C, component) -> {non_field, C#component.name, C#component.composite4name, C#component.mandatoryComposites };
+decompose(C) when is_record(C, group) -> {non_field, C#group.name, C#group.composite4name, C#group.mandatoryComposites };
+decompose(C) when is_record(C, header) -> {non_field, header, C#header.composite4name, C#header.mandatoryComposites };
+decompose(C) when is_record(C, trailer) -> {non_field, trailer, C#trailer.composite4name, C#trailer.mandatoryComposites }.
+
+
+serialize_field(Acc, F, Item) ->
+    Value = erlang:element(2, Item),
+    Bits = [erlang:integer_to_binary(F#field.number), ?SEPARATOR, Value],
+    {ok, [ Bits | Acc] }.
+
+% serialize composite
+
+serialize_composite(Acc, {_P, _N, _C4N, #{}},  []) -> {ok, Acc};
+serialize_composite(_Acc, {_P, N, _C4N, MC},  []) ->
+    [Name | _T ] = maps:keys(MC),
+    Err = iolib:format("Missing mandatory '~w' for '~w'", [Name, N]),
+    Reason = erlang:iolist_to_binary(Err),
+    {error, Reason};
+serialize_composite(Acc, {P, N, C4N, MC}, [H | T]) ->
+    Name = erlang:element(1, H),
+    case maps:find(Name, C4N) of
+        {ok, Composite} ->
+            % serialize head (subcomposite)
+            R = case decompose(Composite) of
+                {non_field, S_N, S_C4N, S_MC} -> serialize_composite(Acc, {P, S_N, S_C4N, S_MC}, H);
+                {field, F} -> serialize_field(Acc, F, H)
+            end,
+            % serialize tail
+            ?DEBUG(R),
+            case R of
+                {ok, AccNew} ->
+                    NewMandatoryComposites = maps:remove(Name, MC),
+                    serialize_composite(AccNew, {P, N, C4N, NewMandatoryComposites}, T);
+                {error, Reason} -> {error, Reason}
+            end;
+        {error} ->
+            Err = iolib:format("'~w' is not available for '~w'", [Name, N]),
+            {error, erlang:iolist_to_binary(Err) }
+    end.
+
 serialize_message(Protocol, Message, MessageFields) ->
-    1.
+    H = Protocol#protocol.header,
+    T = Protocol#protocol.trailer,
+    HT_C4N = maps:merge(H#header.composite4name, T#trailer.composite4name),
+    HT_MC = maps:merge(H#header.mandatoryComposites, T#trailer.mandatoryComposites),
+    N = Message#message.name,
+    C4N_i = maps:merge(Message#message.composite4name, HT_C4N),
+    MC_i = maps:merge(Message#message.mandatoryComposites, HT_MC),
+
+    C4N = maps:without(['BeginString', 'BodyLength', 'MsgType'], C4N_i),
+    MC = maps:without(['CheckSum'], MC_i),
+    {ok, Acc} =serialize_composite([], {Protocol, N, C4N, MC}, MessageFields),
+    ?DEBUG(Acc),
+    ?DEBUG(lists:reverse(Acc)),
+    lists:reverse(Acc).
 
 serialize(Protocol, MessageName, MessageFields) ->
     case maps:find(MessageName, Protocol#protocol.message4name) of
         {ok, Message} -> serialize_message(Protocol, Message, MessageFields);
-        error -> {error, 'Message not found'}
+        error ->
+            Err = iolib:format("Message 'MessageName' not found", [MessageName]),
+            Reason = erlang:iolist_to_binary(Err),
+            {error, Reason}
     end.
