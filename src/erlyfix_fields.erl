@@ -4,8 +4,7 @@
 %-define(TAG_SEPARATOR, <<1:8>>).
 -export([serialize_field/3]).
 
-serialize_field({Size, Acc}, F, Item) ->
-    Value = erlang:element(2, Item),
+serialize_field({Size, Acc}, F, Value) ->
     Value_Bits = if
         is_integer(Value) -> erlang:integer_to_binary(Value);
         is_atom(Value)    -> erlang:atom_to_binary(Value, latin1);

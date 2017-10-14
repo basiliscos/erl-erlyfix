@@ -340,7 +340,7 @@ serialize_composite({Size, Acc}, {P, N, C4N, MC}, [H | T]) ->
             % serialize head (subcomposite)
             R = case decompose(Composite) of
                 {non_field, S_N, S_C4N, S_MC} -> serialize_composite(Acc, {P, S_N, S_C4N, S_MC}, H);
-                {field, F} -> erlyfix_fields:serialize_field({Size, Acc}, F, H)
+                {field, F} -> erlyfix_fields:serialize_field({Size, Acc}, F, erlang:element(2, H))
             end,
             % serialize tail
             % ?DEBUG(R),
@@ -377,25 +377,25 @@ serialize_message(Protocol, Message, MessageFields) ->
     MC = maps:without(['CheckSum'], MC_i),
 
     F_Type = maps:get('MsgType', Protocol#protocol.field4name),
-    {ok, {Size0, Acc0}} = erlyfix_fields:serialize_field({0, []}, F_Type, {'MsgType', Message#message.type}),
+    {ok, {Size0, Acc0}} = erlyfix_fields:serialize_field({0, []}, F_Type, Message#message.type),
     {ok, {SizeB, Acc1}} = serialize_composite({Size0, Acc0}, {Protocol, N, C4N, MC}, MessageFields),
     AccB = lists:reverse(Acc1),
 
     % add length header
     F_BodyLength = maps:get('BodyLength', Protocol#protocol.field4name),
-    {ok, {SizeL, AccL}} = erlyfix_fields:serialize_field({0, []}, F_BodyLength, {'BodyLength', SizeB}),
+    {ok, {SizeL, AccL}} = erlyfix_fields:serialize_field({0, []}, F_BodyLength, SizeB),
 
     % add begin strign header
     Version = Protocol#protocol.protocol_version,
     ProtocolID = io_lib:format("FIX.~B.~B", [Version#protocol_version.major, Version#protocol_version.minor]),
     F_BeginString = maps:get('BeginString', Protocol#protocol.field4name),
-    {ok, {SizeH, AccH}} = erlyfix_fields:serialize_field({SizeL, AccL}, F_BeginString, {'BeginString', ProtocolID}),
+    {ok, {SizeH, AccH}} = erlyfix_fields:serialize_field({SizeL, AccL}, F_BeginString, ProtocolID),
     ?DEBUG(AccH),
 
     % checksum trailer,
     F_CheckSum = maps:get('CheckSum', Protocol#protocol.field4name),
     CheckSum = checksum(0, [AccH | AccB]),
-    {ok, {_SizeT, AccT}} = erlyfix_fields:serialize_field({0, []}, F_CheckSum, {'CheckSum', CheckSum}),
+    {ok, {_SizeT, AccT}} = erlyfix_fields:serialize_field({0, []}, F_CheckSum, CheckSum),
 
     AccR = [AccH,  AccB, AccT],
     ?DEBUG(AccR),
