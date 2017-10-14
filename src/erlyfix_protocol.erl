@@ -325,40 +325,44 @@ decompose(C) when is_record(C, header) -> {non_field, header, C#header.composite
 decompose(C) when is_record(C, trailer) -> {non_field, trailer, C#trailer.composite4name, C#trailer.mandatoryComposites }.
 
 
-serialize_field(Acc, F, Item) ->
-    Value = erlang:element(2, Item),
-    Bits = [erlang:integer_to_binary(F#field.number), ?SEPARATOR, Value],
-    {ok, [ Bits | Acc] }.
-
 % serialize composite
 
-serialize_composite(Acc, {_P, _N, _C4N, #{}},  []) -> {ok, Acc};
-serialize_composite(_Acc, {_P, N, _C4N, MC},  []) ->
+serialize_composite(AccContainer, {_P, _N, _C4N, #{}},  []) -> {ok, AccContainer};
+serialize_composite(_AccContainer, {_P, N, _C4N, MC},  []) ->
     [Name | _T ] = maps:keys(MC),
     Err = iolib:format("Missing mandatory '~w' for '~w'", [Name, N]),
     Reason = erlang:iolist_to_binary(Err),
     {error, Reason};
-serialize_composite(Acc, {P, N, C4N, MC}, [H | T]) ->
+serialize_composite({Size, Acc}, {P, N, C4N, MC}, [H | T]) ->
     Name = erlang:element(1, H),
     case maps:find(Name, C4N) of
         {ok, Composite} ->
             % serialize head (subcomposite)
             R = case decompose(Composite) of
                 {non_field, S_N, S_C4N, S_MC} -> serialize_composite(Acc, {P, S_N, S_C4N, S_MC}, H);
-                {field, F} -> serialize_field(Acc, F, H)
+                {field, F} -> erlyfix_fields:serialize_field({Size, Acc}, F, H)
             end,
             % serialize tail
-            ?DEBUG(R),
+            % ?DEBUG(R),
             case R of
-                {ok, AccNew} ->
+                {ok, {NewSize, NewAcc}} ->
                     NewMandatoryComposites = maps:remove(Name, MC),
-                    serialize_composite(AccNew, {P, N, C4N, NewMandatoryComposites}, T);
+                    serialize_composite({NewSize, NewAcc}, {P, N, C4N, NewMandatoryComposites}, T);
                 {error, Reason} -> {error, Reason}
             end;
         {error} ->
             Err = iolib:format("'~w' is not available for '~w'", [Name, N]),
             {error, erlang:iolist_to_binary(Err) }
     end.
+
+checksum(Acc, []) -> Acc rem 256;
+checksum(Acc, [H | T]) when is_list(H) ->
+    H_Acc = checksum(Acc, H),
+    checksum(H_Acc, T);
+checksum(Acc, [H | T]) when is_binary(H) ->
+    F = fun(X, Acc0) -> X + Acc0 end,
+    lists:foldl(F, Acc, binary_to_list(H)).
+
 
 serialize_message(Protocol, Message, MessageFields) ->
     H = Protocol#protocol.header,
@@ -371,10 +375,32 @@ serialize_message(Protocol, Message, MessageFields) ->
 
     C4N = maps:without(['BeginString', 'BodyLength', 'MsgType'], C4N_i),
     MC = maps:without(['CheckSum'], MC_i),
-    {ok, Acc} =serialize_composite([], {Protocol, N, C4N, MC}, MessageFields),
-    ?DEBUG(Acc),
-    ?DEBUG(lists:reverse(Acc)),
-    lists:reverse(Acc).
+
+    F_Type = maps:get('MsgType', Protocol#protocol.field4name),
+    {ok, {Size0, Acc0}} = erlyfix_fields:serialize_field({0, []}, F_Type, {'MsgType', Message#message.type}),
+    {ok, {SizeB, Acc1}} = serialize_composite({Size0, Acc0}, {Protocol, N, C4N, MC}, MessageFields),
+    AccB = lists:reverse(Acc1),
+
+    % add length header
+    F_BodyLength = maps:get('BodyLength', Protocol#protocol.field4name),
+    {ok, {SizeL, AccL}} = erlyfix_fields:serialize_field({0, []}, F_BodyLength, {'BodyLength', SizeB}),
+
+    % add begin strign header
+    Version = Protocol#protocol.protocol_version,
+    ProtocolID = io_lib:format("FIX.~B.~B", [Version#protocol_version.major, Version#protocol_version.minor]),
+    F_BeginString = maps:get('BeginString', Protocol#protocol.field4name),
+    {ok, {SizeH, AccH}} = erlyfix_fields:serialize_field({SizeL, AccL}, F_BeginString, {'BeginString', ProtocolID}),
+    ?DEBUG(AccH),
+
+    % checksum trailer,
+    F_CheckSum = maps:get('CheckSum', Protocol#protocol.field4name),
+    CheckSum = checksum(0, [AccH | AccB]),
+    {ok, {_SizeT, AccT}} = erlyfix_fields:serialize_field({0, []}, F_CheckSum, {'CheckSum', CheckSum}),
+
+    AccR = [AccH,  AccB, AccT],
+    ?DEBUG(AccR),
+    {ok, AccR}.
+    %lists:reverse(AccL).
 
 serialize(Protocol, MessageName, MessageFields) ->
     case maps:find(MessageName, Protocol#protocol.message4name) of
