@@ -361,8 +361,16 @@ checksum(Acc, [H | T]) when is_list(H) ->
     checksum(H_Acc, T);
 checksum(Acc, [H | T]) when is_binary(H) ->
     F = fun(X, Acc0) -> X + Acc0 end,
-    lists:foldl(F, Acc, binary_to_list(H)).
+    lists:foldl(F, 0, binary_to_list(H)) + checksum(Acc, T).
 
+process_pipeline(Acc, []) -> {ok, Acc};
+process_pipeline(Acc0, [H | T]) ->
+    R = H(Acc0),
+    %?DEBUG(R),
+    case R of
+        {ok, Acc1} -> process_pipeline(Acc1, T);
+        {error, Details} -> {error, Details}
+    end.
 
 serialize_message(Protocol, Message, MessageFields) ->
     H = Protocol#protocol.header,
@@ -376,31 +384,48 @@ serialize_message(Protocol, Message, MessageFields) ->
     C4N = maps:without(['BeginString', 'BodyLength', 'MsgType'], C4N_i),
     MC = maps:without(['CheckSum'], MC_i),
 
+    % managed fields
     F_Type = maps:get('MsgType', Protocol#protocol.field4name),
-    {ok, {Size0, Acc0}} = erlyfix_fields:serialize_field({0, []}, F_Type, Message#message.type),
-    {ok, {SizeB, Acc1}} = serialize_composite({Size0, Acc0}, {Protocol, N, C4N, MC}, MessageFields),
-    AccB = lists:reverse(Acc1),
-
-    % add length header
     F_BodyLength = maps:get('BodyLength', Protocol#protocol.field4name),
-    {ok, {SizeL, AccL}} = erlyfix_fields:serialize_field({0, []}, F_BodyLength, SizeB),
-
-    % add begin strign header
-    Version = Protocol#protocol.protocol_version,
-    ProtocolID = io_lib:format("FIX.~B.~B", [Version#protocol_version.major, Version#protocol_version.minor]),
     F_BeginString = maps:get('BeginString', Protocol#protocol.field4name),
-    {ok, {SizeH, AccH}} = erlyfix_fields:serialize_field({SizeL, AccL}, F_BeginString, ProtocolID),
-    ?DEBUG(AccH),
-
-    % checksum trailer,
     F_CheckSum = maps:get('CheckSum', Protocol#protocol.field4name),
-    CheckSum = checksum(0, [AccH | AccB]),
-    {ok, {_SizeT, AccT}} = erlyfix_fields:serialize_field({0, []}, F_CheckSum, CheckSum),
 
-    AccR = [AccH,  AccB, AccT],
-    ?DEBUG(AccR),
-    {ok, AccR}.
-    %lists:reverse(AccL).
+    Fn_add_MsgType = fun(Acc0) ->
+        erlyfix_fields:serialize_field(Acc0, F_Type, Message#message.type)
+    end,
+    Fn_serialize_body = fun(Acc0) ->
+        serialize_composite(Acc0, {Protocol, N, C4N, MC}, MessageFields)
+    end,
+    Fn_reverse_body = fun({Size0, List0}) -> {ok, {Size0, lists:reverse(List0)}} end,
+
+    Fn_wrap_body = fun({SizeB,  AccB}) ->
+        Fn_headers = [
+            fun(_Acc) -> erlyfix_fields:serialize_field({0, []}, F_BodyLength, SizeB) end,
+            fun(Acc) ->
+                Version = Protocol#protocol.protocol_version,
+                ProtocolID = io_lib:format("FIX.~B.~B", [Version#protocol_version.major, Version#protocol_version.minor]),
+                erlyfix_fields:serialize_field(Acc, F_BeginString, ProtocolID)
+            end,
+            fun({SizeH, AccH}) ->
+                CheckSum = checksum(0, [AccH | AccB]),
+                erlyfix_fields:serialize_field({SizeH, AccH}, F_CheckSum, CheckSum)
+            end,
+            fun({SizeTH, [AccT | AccH]}) -> {ok, {SizeTH + SizeB, [ AccH, AccB, AccT]} } end
+        ],
+        process_pipeline({SizeB,  AccB}, Fn_headers)
+    end,
+
+    R = process_pipeline({0, []}, [
+        Fn_add_MsgType,
+        Fn_serialize_body,
+        Fn_reverse_body,
+        Fn_wrap_body
+    ]),
+
+    case R of
+        {ok, {_Size, Acc}} -> {ok, Acc};
+        {error, Reason} -> {error, Reason}
+    end.
 
 serialize(Protocol, MessageName, MessageFields) ->
     case maps:find(MessageName, Protocol#protocol.message4name) of

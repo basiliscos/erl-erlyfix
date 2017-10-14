@@ -23,7 +23,7 @@ serialization_Logon_test() ->
     M = iolist_to_binary(IoList),
     M_expected = <<"8=FIX.4.4", 1, "9=86", 1, "35=A", 1, "49=From-me", 1, "56=To-you", 1,
         "34=1", 1, "52=20090107-18:15:16", 1, "98=NONE", 1, "553=Login", 1,
-        "554=Pass", 1, "108=20", 1, "10=196", 1
+        "554=Pass", 1, "108=20", 1, "10=101", 1
     >>,
     %?debugFmt("Message(r) == ~s, ~w", [M, M]),
     %?debugFmt("Message(e) == ~s, ~w", [M_expected, M_expected]),
