@@ -6,14 +6,14 @@
 
 serialize_field({Size, Acc}, F, raw, Value) ->
     Value_Bits = if
-        is_integer(Value) -> erlang:integer_to_binary(Value);
-        is_atom(Value)    -> erlang:atom_to_binary(Value, latin1);
-        is_list(Value)    -> erlang:list_to_binary(Value);
-        is_binary(Value)  -> Value
+        is_integer(Value) -> erlang:integer_to_list(Value);
+        is_atom(Value)    -> erlang:atom_to_list(Value);
+        is_list(Value)    -> Value;
+        is_binary(Value)  -> erlang:binary_to_list(Value)
     end,
-    Number_Bits = erlang:integer_to_binary(F#field.number),
-    Bits = [Number_Bits, <<"=">>, Value_Bits, <<1:8>>],
-    NewSize = Size + 2 + size(Number_Bits) + size(Value_Bits),
+    Number_Bits = erlang:integer_to_list(F#field.number),
+    Bits = [Number_Bits, "=", Value_Bits, 1],
+    NewSize = Size + 2 + length(Number_Bits) + length(Value_Bits),
     {ok, {NewSize, [ Bits | Acc]} }.
 
 serialize_field({Size, Acc}, F, RawValue) ->
@@ -25,7 +25,7 @@ serialize_field({Size, Acc}, F, RawValue) ->
                 error ->
                     ?DEBUG(F#field.value4description),
                     ?DEBUG(RawValue),
-                    Err = iolib:format("Description '~s' is not available for field '~s'", [RawValue, F#field.name]),
+                    Err = io_lib:format("Description '~s' is not available for field '~s'", [RawValue, F#field.name]),
                     Reason = erlang:iolist_to_binary(Err),
                     {error, Reason}
             end

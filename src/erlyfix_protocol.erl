@@ -327,14 +327,19 @@ decompose(C) when is_record(C, trailer) -> {non_field, trailer, C#trailer.compos
 
 % serialize composite
 
-serialize_composite(AccContainer, {_P, _N, _C4N, #{}},  []) -> {ok, AccContainer};
-serialize_composite(_AccContainer, {_P, N, _C4N, MC},  []) ->
-    [Name | _T ] = maps:keys(MC),
-    Err = iolib:format("Missing mandatory '~w' for '~w'", [Name, N]),
-    Reason = erlang:iolist_to_binary(Err),
-    {error, Reason};
+serialize_composite(AccContainer, {_P, N, _C4N, MC},  []) ->
+    case maps:size(MC) of
+        0 -> {ok, AccContainer};
+        _S ->
+            [Name | _T ] = maps:keys(MC),
+            Err = io_lib:format("Missing mandatory '~s' for '~s'", [Name, N]),
+            Reason = erlang:iolist_to_binary(Err),
+            {error, Reason}
+    end;
 serialize_composite({Size, Acc}, {P, N, C4N, MC}, [H | T]) ->
     Name = erlang:element(1, H),
+    %?DEBUG(Name),
+    %?DEBUG(maps:keys(MC)),
     case maps:find(Name, C4N) of
         {ok, Composite} ->
             % serialize head (subcomposite)
@@ -347,6 +352,7 @@ serialize_composite({Size, Acc}, {P, N, C4N, MC}, [H | T]) ->
             case R of
                 {ok, {NewSize, NewAcc}} ->
                     NewMandatoryComposites = maps:remove(Name, MC),
+                    %?DEBUG(maps:keys(NewMandatoryComposites)),
                     serialize_composite({NewSize, NewAcc}, {P, N, C4N, NewMandatoryComposites}, T);
                 {error, Reason} -> {error, Reason}
             end;
@@ -357,11 +363,9 @@ serialize_composite({Size, Acc}, {P, N, C4N, MC}, [H | T]) ->
 
 checksum(Acc, []) -> Acc rem 256;
 checksum(Acc, [H | T]) when is_list(H) ->
-    H_Acc = checksum(Acc, H),
-    checksum(H_Acc, T);
-checksum(Acc, [H | T]) when is_binary(H) ->
-    F = fun(X, Acc0) -> X + Acc0 end,
-    lists:foldl(F, 0, binary_to_list(H)) + checksum(Acc, T).
+    checksum(checksum(Acc, H), T);
+checksum(Acc, [H | T]) when is_integer(H) ->
+    checksum(Acc + H, T).
 
 process_pipeline(Acc, []) -> {ok, Acc};
 process_pipeline(Acc0, [H | T]) ->
@@ -381,8 +385,11 @@ serialize_message(Protocol, Message, MessageFields) ->
     C4N_i = maps:merge(Message#message.composite4name, HT_C4N),
     MC_i = maps:merge(Message#message.mandatoryComposites, HT_MC),
 
-    C4N = maps:without(['BeginString', 'BodyLength', 'MsgType'], C4N_i),
-    MC = maps:without(['CheckSum'], MC_i),
+    ManagedFields = ['BeginString', 'BodyLength', 'MsgType', 'CheckSum'],
+    C4N = maps:without(ManagedFields, C4N_i),
+    MC = maps:without(ManagedFields, MC_i),
+
+    ?DEBUG(maps:keys(MC)),
 
     % managed fields
     F_Type = maps:get('MsgType', Protocol#protocol.field4name),
@@ -408,7 +415,8 @@ serialize_message(Protocol, Message, MessageFields) ->
             end,
             fun({SizeH, AccH}) ->
                 CheckSum = checksum(0, [AccH | AccB]),
-                erlyfix_fields:serialize_field({SizeH, AccH}, F_CheckSum, CheckSum)
+                PaddedCS = io_lib:format("~3..0B", [CheckSum]),
+                erlyfix_fields:serialize_field({SizeH, AccH}, F_CheckSum, PaddedCS)
             end,
             fun({SizeTH, [AccT | AccH]}) -> {ok, {SizeTH + SizeB, [ AccH, AccB, AccT]} } end
         ],
