@@ -391,7 +391,7 @@ serialize_message(Protocol, Message, MessageFields) ->
     F_CheckSum = maps:get('CheckSum', Protocol#protocol.field4name),
 
     Fn_add_MsgType = fun(Acc0) ->
-        erlyfix_fields:serialize_field(Acc0, F_Type, Message#message.type)
+        erlyfix_fields:serialize_field(Acc0, F_Type, raw, Message#message.type)
     end,
     Fn_serialize_body = fun(Acc0) ->
         serialize_composite(Acc0, {Protocol, N, C4N, MC}, MessageFields)
