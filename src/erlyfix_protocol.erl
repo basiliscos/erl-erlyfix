@@ -356,7 +356,7 @@ serialize_composite(AccContainer, {_P, N, _C4N, MC},  []) ->
             Reason = erlang:iolist_to_binary(Err),
             {error, Reason}
     end;
-serialize_composite({Size, Acc}, {P, N, C4N, MC}, [H | T]) ->
+serialize_composite(AccContainer, {P, N, C4N, MC}, [H | T]) ->
     Name = erlang:element(1, H),
     %?DEBUG(Name),
     %?DEBUG(Acc),
@@ -365,9 +365,9 @@ serialize_composite({Size, Acc}, {P, N, C4N, MC}, [H | T]) ->
         {ok, Composite} ->
             % serialize head (subcomposite)
             R = case decompose(Composite) of
-                {composite, S_N, S_C4N, S_MC} -> serialize_composite(Acc, {P, S_N, S_C4N, S_MC}, H);
-                {group, S_N, S_C4N, S_MC} -> serialize_group({Size, Acc}, {P, S_N, S_C4N, S_MC}, H);
-                {field, F} -> erlyfix_fields:serialize_field({Size, Acc}, F, erlang:element(2, H))
+                {composite, S_N, S_C4N, S_MC} -> serialize_composite(AccContainer, {P, S_N, S_C4N, S_MC}, erlang:element(2, H));
+                {group, S_N, S_C4N, S_MC} -> serialize_group(AccContainer, {P, S_N, S_C4N, S_MC}, H);
+                {field, F} -> erlyfix_fields:serialize_field(AccContainer, F, erlang:element(2, H))
             end,
             % serialize tail
             % ?DEBUG(R),
