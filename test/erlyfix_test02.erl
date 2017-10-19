@@ -61,9 +61,29 @@ serialization_Logon_test() ->
     M_expected = <<"8=FIX.4.4", 1, "9=56", 1, "35=A", 1, "49=me", 1, "56=you", 1,
         "34=1", 1, "52=20090107-18:15:16", 1, "98=0", 1, "108=60", 1, "10=110", 1
     >>,
+    ?assertEqual(M_expected, M).
+
+serialization_with_Group_test() ->
+    P = load(),
+    {ok, IoList} = erlyfix_protocol:serialize(P, 'Logon', [
+        {'SenderCompID', <<"me">>},
+        {'TargetCompID', <<"you">>},
+        {'MsgSeqNum', 1},
+        {'SendingTime', '20090107-18:15:16'},
+        {'EncryptMethod', <<"NONE">>},
+        {'HeartBtInt', 60},
+        {'NoMsgTypes', [
+            [{'RefMsgType', <<"abc">>}, {'MsgDirection', <<"SEND">>}],
+            [{'RefMsgType', <<"def">>}, {'MsgDirection', <<"RECEIVE">>}]
+        ]}
+    ]),
+    M = iolist_to_binary(IoList),
+    M_expected = <<"8=FIX.4.4", 1, "9=90", 1, "35=A", 1, "49=me", 1, "56=you", 1,
+        "34=1", 1, "52=20090107-18:15:16", 1, "98=0", 1, "108=60", 1, "384=2", 1,
+        "372=abc", 1, "385=S", 1, "372=def", 1, "385=R", 1, "10=229", 1
+    >>,
     %?debugFmt("Message(r) == ~s", [M]),
     %?debugFmt("Message(e) == ~s", [M_expected]),
     %?debugFmt("Message(r2) == ~w", [M]),
     %?debugFmt("Message(e2) == ~w", [M_expected]),
     ?assertEqual(M_expected, M).
-

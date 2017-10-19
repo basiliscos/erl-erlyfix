@@ -319,14 +319,34 @@ lookup(Protocol, Criterium) ->
 % decompose composite
 
 decompose(C) when is_record(C, field) -> {field, C};
-decompose(C) when is_record(C, component) -> {non_field, C#component.name, C#component.composite4name, C#component.mandatoryComposites };
-decompose(C) when is_record(C, group) -> {non_field, C#group.name, C#group.composite4name, C#group.mandatoryComposites };
-decompose(C) when is_record(C, header) -> {non_field, header, C#header.composite4name, C#header.mandatoryComposites };
-decompose(C) when is_record(C, trailer) -> {non_field, trailer, C#trailer.composite4name, C#trailer.mandatoryComposites }.
+decompose(C) when is_record(C, group) -> {group, C#group.name, C#group.composite4name, C#group.mandatoryComposites};
+decompose(C) when is_record(C, component) -> {composite, C#component.name, C#component.composite4name, C#component.mandatoryComposites };
+decompose(C) when is_record(C, header) -> {composite, header, C#header.composite4name, C#header.mandatoryComposites };
+decompose(C) when is_record(C, trailer) -> {composite, trailer, C#trailer.composite4name, C#trailer.mandatoryComposites }.
 
+
+% serialize group item
+serialize_group_item(AccContainer, {P, N, C4N, MC}, []) ->
+    serialize_composite(AccContainer, {P, N, C4N, MC}, []);
+
+serialize_group_item(AccContainer, {P, N, C4N, MC}, [H | T]) ->
+    case serialize_composite(AccContainer, {P, N, C4N, MC}, H) of
+        {ok, NewAccContainer} -> serialize_group_item(NewAccContainer, {P, N, C4N, MC}, T);
+        {error, Reason} -> {error, Reason}
+    end.
+
+
+% serialize group
+serialize_group(AccContainer, {P, N, C4N, MC}, H) ->
+    Items = erlang:element(2, H),
+    L = length(Items),
+    F = maps:get(N, P#protocol.field4name),
+    case erlyfix_fields:serialize_field(AccContainer, F, raw, L) of
+        {ok, NewAccContainer} -> serialize_group_item(NewAccContainer, {P, N, C4N, MC}, Items);
+        {error, Reason} -> {error, Reason}
+    end.
 
 % serialize composite
-
 serialize_composite(AccContainer, {_P, N, _C4N, MC},  []) ->
     case maps:size(MC) of
         0 -> {ok, AccContainer};
@@ -339,12 +359,14 @@ serialize_composite(AccContainer, {_P, N, _C4N, MC},  []) ->
 serialize_composite({Size, Acc}, {P, N, C4N, MC}, [H | T]) ->
     Name = erlang:element(1, H),
     %?DEBUG(Name),
+    %?DEBUG(Acc),
     %?DEBUG(maps:keys(MC)),
     case maps:find(Name, C4N) of
         {ok, Composite} ->
             % serialize head (subcomposite)
             R = case decompose(Composite) of
-                {non_field, S_N, S_C4N, S_MC} -> serialize_composite(Acc, {P, S_N, S_C4N, S_MC}, H);
+                {composite, S_N, S_C4N, S_MC} -> serialize_composite(Acc, {P, S_N, S_C4N, S_MC}, H);
+                {group, S_N, S_C4N, S_MC} -> serialize_group({Size, Acc}, {P, S_N, S_C4N, S_MC}, H);
                 {field, F} -> erlyfix_fields:serialize_field({Size, Acc}, F, erlang:element(2, H))
             end,
             % serialize tail
