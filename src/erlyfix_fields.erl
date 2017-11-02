@@ -2,7 +2,7 @@
 -include("erlyfix_records.hrl").
 -define(DEBUG(X), io:format("DEBUG ~p:~p ~p~n",[?MODULE, ?LINE, X])).
 
--export([serialize_field/3, serialize_field/4]).
+-export([serialize_field/3, serialize_field/4, convert/2]).
 
 serialize_field({Size, Acc}, F, raw, Value) ->
     Value_Bits = if
@@ -34,5 +34,28 @@ serialize_field({Size, Acc}, F, RawValue) ->
     case R of
         {ok, Value} -> serialize_field({Size, Acc}, F, raw, Value);
         {error, Descr} -> {error, Descr}
+    end.
+
+check_and_convert('STRING', Value) ->
+    case re:run(Value, <<1>>) of
+        nomatch -> {ok, Value};
+        _Found -> error
+    end;
+check_and_convert('LENGTH', Value) ->
+    Size = byte_size(Value),
+    case re:run(Value, <<"\\d+">>) of
+        {match,[{0,Size}]} -> {ok, binary_to_integer(Value)};
+        nomatch -> error;
+        _PatrialMatch -> error
+    end.
+
+
+convert(Value, F) when is_binary(Value) ->
+    case check_and_convert(F#field.type, Value) of
+        error ->
+            Err = io_lib:format("Value '~s' does not match field '~s' validation", [Value, F#field.name]),
+            Reason = erlang:iolist_to_binary(Err),
+            {error, Reason};
+        {ok, ConvertedValue} -> {ok, ConvertedValue}
     end.
 

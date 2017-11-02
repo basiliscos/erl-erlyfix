@@ -358,9 +358,6 @@ serialize_composite(AccContainer, {_P, N, _C4N, MC},  []) ->
     end;
 serialize_composite(AccContainer, {P, N, C4N, MC}, [H | T]) ->
     Name = erlang:element(1, H),
-    %?DEBUG(Name),
-    %?DEBUG(Acc),
-    %?DEBUG(maps:keys(MC)),
     case maps:find(Name, C4N) of
         {ok, Composite} ->
             % serialize head (subcomposite)
@@ -369,7 +366,6 @@ serialize_composite(AccContainer, {P, N, C4N, MC}, [H | T]) ->
                 {group, S_N, S_C4N, S_MC} -> serialize_group(AccContainer, {P, S_N, S_C4N, S_MC}, H);
                 {field, F} -> erlyfix_fields:serialize_field(AccContainer, F, erlang:element(2, H))
             end,
-            % serialize tail
             % ?DEBUG(R),
             case R of
                 {ok, {NewSize, NewAcc}} ->
@@ -383,11 +379,6 @@ serialize_composite(AccContainer, {P, N, C4N, MC}, [H | T]) ->
             {error, erlang:iolist_to_binary(Err) }
     end.
 
-checksum(Acc, []) -> Acc rem 256;
-checksum(Acc, [H | T]) when is_list(H) ->
-    checksum(checksum(Acc, H), T);
-checksum(Acc, [H | T]) when is_integer(H) ->
-    checksum(Acc + H, T).
 
 process_pipeline(Acc, []) -> {ok, Acc};
 process_pipeline(Acc0, [H | T]) ->
@@ -436,7 +427,7 @@ serialize_message(Protocol, Message, MessageFields) ->
                 erlyfix_fields:serialize_field(Acc, F_BeginString, ProtocolID)
             end,
             fun({SizeH, AccH}) ->
-                CheckSum = checksum(0, [AccH | AccB]),
+                CheckSum = erlyfix_utils:checksum([AccH | AccB]),
                 PaddedCS = io_lib:format("~3..0B", [CheckSum]),
                 erlyfix_fields:serialize_field({SizeH, AccH}, F_CheckSum, PaddedCS)
             end,

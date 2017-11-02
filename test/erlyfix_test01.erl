@@ -20,6 +20,7 @@ protocol_load_test() ->
     ?assertEqual(#{}, F_account_1#field.value4key),
     ?assertEqual(#{}, F_account_1#field.value4description),
     {ok, F_account_2} = erlyfix_protocol:lookup(P, {field, by_number, 1 }),
+    not_found = erlyfix_protocol:lookup(P, {field, by_number, 9999999 }),
     ?assertEqual(F_account_1, F_account_2),
 
     % field with values
@@ -85,4 +86,5 @@ protocol_load_test() ->
     {ok, F_EncryptMethod} = maps:find('EncryptMethod', M_Logon#message.composite4name),
     {ok, F_EncryptMethod} = maps:find('EncryptMethod', M_Logon#message.mandatoryComposites),
     {ok, _G_NoMsgTypes} = maps:find('NoMsgTypes', M_Logon#message.composite4name),
-    ?assertEqual(error, maps:find('NoMsgTypes', M_Logon#message.mandatoryComposites)).
+    ?assertEqual(error, maps:find('NoMsgTypes', M_Logon#message.mandatoryComposites)),
+    {ok, M_Logon} = erlyfix_protocol:lookup(P, {message, by_type, 'A' }).
