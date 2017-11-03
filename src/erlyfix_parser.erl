@@ -117,14 +117,14 @@ extract_checksum(Data, #context{protocol = P, data = _D}, Acc) ->
     end.
 
 confirm_checksum(Body, #context{protocol = P, data = Data}, Acc) ->
-    [{_F, Checksum, ChecksumSize} | Acc0 ] = Acc,
+    [{F, Checksum, ChecksumSize} | Acc0 ] = Acc,
     TotalSize = byte_size(Data),
     CheckSummedSize = TotalSize - ChecksumSize,
     <<SubjectData:CheckSummedSize/binary, _Tag:ChecksumSize/binary>> = Data,
     ActualChecksum = erlyfix_utils:checksum(binary_to_list(SubjectData)),
     case Checksum =:= ActualChecksum of
         true ->
-            {ok, Acc, Body};
+            {ok, [{F, Checksum} | Acc0], Body};
         false ->
             Err = io_lib:format("Checksum mismatch. Expected: '~B', got '~B'",
                 [Checksum, ActualChecksum]),
@@ -190,6 +190,67 @@ parse_tags(Body, P, Acc) ->
         _OtherResult -> _OtherResult
     end.
 
+classify_group(L, G, V) ->
+    Count = binary_to_integer(V),
+    ScopeCTX = {G#group.name, Count},
+    C4N = G#group.composite4name,
+    MC = G#group.mandatoryComposites,
+    start_classify_scope(L, {group, ScopeCTX, C4N, MC}).
+
+finish_classify_scope(L, {Scope, _C4N}, MandatoryLeft, Acc) ->
+    case maps:size(MandatoryLeft) of
+        0 ->
+            Acc1 = lists:reverse([{finish, Scope} | Acc ]),
+            % ?DEBUG(["Finish "] ++ [atom_to_list(Scope)]),
+            {ok, Acc1, L};
+        _N ->
+            [Name | _T ] = maps:keys(MandatoryLeft),
+            Err = io_lib:format("Missing mandatory '~s' for '~s'", [Name, Scope]),
+            Reason = erlang:iolist_to_binary(Err),
+            {error, Reason}
+    end.
+
+classify_scope([], Current, MandatoryLeft, Acc) ->
+    finish_classify_scope([], Current, MandatoryLeft, Acc);
+classify_scope([H | T] = L, {Scope, C4N} = Current, MandatoryLeft, Acc) ->
+    {F, V} = H,
+    % ?DEBUG(F#field.name),
+    case maps:find(F#field.name, C4N) of
+        {ok, F} ->
+            MandatoryLeft2 = maps:remove(F#field.name, MandatoryLeft),
+            classify_scope(T, Current, MandatoryLeft2, [{field, F, V} | Acc]);
+        {ok, G} when element(1, G) =:= group ->
+            MandatoryLeft2 = maps:remove(G#group.name, MandatoryLeft),
+            case classify_group(T, G, V) of
+                {ok, AccG, L2} ->
+                    Acc2 = lists:reverse(AccG) ++ Acc,
+                    classify_scope(L2, Current, MandatoryLeft2, Acc2);
+                _OtherResult -> _OtherResult
+            end;
+        error -> finish_classify_scope(L, Current, MandatoryLeft, Acc)
+    end.
+start_classify_scope(List, {Scope, ScopeCTX, C4N, MC}) ->
+    % ?DEBUG(["Start "] ++ [atom_to_list(Scope)]),
+    classify_scope(List, {Scope, C4N}, MC, [{start, Scope, ScopeCTX}]).
+
+
+classify([], Candidates, Acc) ->
+    Acc1 = lists:reverse(Acc),
+    Acc2 = lists:flatten(Acc1),
+    {ok, Acc2};
+classify([H | T], [], Acc) ->
+    {F, _V} = H,
+    Err = io_lib:format("Unknown filed '~s'", [F#field.name]),
+    Reason = erlang:iolist_to_binary(Err),
+    {error, Reason};
+classify(L, [Scope | ScopeTail], Acc) ->
+    case start_classify_scope(L, Scope) of
+        {ok, InnerAcc, L1} ->
+            Acc1 = [InnerAcc | Acc],
+            classify(L1, ScopeTail, Acc1);
+        _OtherResult -> _OtherResult
+    end.
+
 parse(Data, P) ->
     case parse_managed_fields(Data, P) of
         {ok, Acc, RestOfBody} ->
@@ -199,7 +260,17 @@ parse(Data, P) ->
             case parse_tags(RestOfBody, P, Acc1) of
                 Acc2 ->
                     % reconstruct original tags sequence
-                    {[ TagChecksum | Acc2], RestData};
+                    Acc3 = lists:reverse([TagChecksum | Acc2]),
+                    H = P#protocol.header,
+                    T = P#protocol.trailer,
+                    Scopes = [
+                        {header, {}, H#header.composite4name, H#header.mandatoryComposites},
+                        {body, {}, Message#message.composite4name, Message#message.mandatoryComposites},
+                        {trailer, {}, T#trailer.composite4name, T#trailer.mandatoryComposites}
+                    ],
+                    R = classify(Acc3, Scopes, []),
+                    % ?DEBUG(R),
+                    R;
                 _OtherResult -> _OtherResult
             end;
         _OtherResult -> _OtherResult

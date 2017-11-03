@@ -402,7 +402,7 @@ serialize_message(Protocol, Message, MessageFields) ->
     C4N = maps:without(ManagedFields, C4N_i),
     MC = maps:without(ManagedFields, MC_i),
 
-    ?DEBUG(maps:keys(MC)),
+    %?DEBUG(maps:keys(MC)),
 
     % managed fields
     F_Type = maps:get('MsgType', Protocol#protocol.field4name),
