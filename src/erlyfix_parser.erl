@@ -7,15 +7,17 @@
 
 -record(context, {protocol, data}).
 
-parse_tagpair(Data) ->
-    case re:split(Data, <<1>>, [{parts, 2}, {return, binary}]) of
+parse_tagpair({List, Size}) ->
+    case re:split(List, <<1>>, [{parts, 2}, {return, list}]) of
         [Pair, Rest] ->
-            case re:split(Pair, <<"=">>, [{parts, 2}, {return, binary}]) of
+            case re:split(Pair, <<"=">>, [{parts, 2}, {return, iodata}]) of
                 [Tag, Value] ->
-                    TagSize = byte_size(Tag),
+                    TagSize = iolist_size(Tag),
                     case re:run(Tag, <<"\\d+">>) of
                         {match, [{0, TagSize}]} ->
-                            {ok, {binary_to_integer(Tag), Value}, Rest};
+                            %?DEBUG(Rest),
+                            PairSize = iolist_size(Pair) + 1,
+                            {ok, {binary_to_integer(Tag), Value, PairSize}, {Rest, Size - PairSize}};
                         _SomethingElse ->
                             Err = io_lib:format("Tag '~s' is not a number", [Tag]),
                             Reason = erlang:iolist_to_binary(Err),
@@ -26,13 +28,14 @@ parse_tagpair(Data) ->
                     Reason = erlang:iolist_to_binary(Err),
                     {error, Reason}
             end;
-        [Data] -> {not_found, Data}
+        [List] -> not_found
     end.
 
 parse_tagvalue(Data, F) ->
     N = F#field.number,
     case parse_tagpair(Data) of
-        {ok, {Tag, BinaryValue}, Rest} ->
+        {ok, {Tag, BinaryValue, Size}, Rest} ->
+            %?DEBUG(Rest),
             case Tag =:= N of
                 false ->
                     Err = io_lib:format("Tag mismatch. Expected: '~w', got '~w'", [N, Tag]),
@@ -40,7 +43,7 @@ parse_tagvalue(Data, F) ->
                     {error, Reason};
                 true ->
                     case erlyfix_fields:convert(BinaryValue, F) of
-                        {ok, Value} -> {ok, Value, Rest};
+                        {ok, Value} -> {ok, Value, Size, Rest};
                         {error, Reason} -> {error, Reason}
                     end
             end;
@@ -55,7 +58,7 @@ parse_introduction(Data, #context{protocol = P, data = _D}, Acc)->
 
     case parse_tagvalue(Data, F) of
         {error, Reason} -> {error, Reason};
-        {not_found, Data} ->
+        not_found ->
             LengthMin = byte_size(integer_to_binary(F#field.number))
                 + 1 % '=' aka separator
                 + byte_size(BeginString),
@@ -66,10 +69,10 @@ parse_introduction(Data, #context{protocol = P, data = _D}, Acc)->
                     Reason = erlang:iolist_to_binary(Err),
                     {error, Reason}
             end;
-        {ok, Value, Rest} ->
+        {ok, Value, Size, Rest} ->
             case Value of
                 BeginString ->
-                    {ok, [{F, Value} | Acc], Rest};
+                    {ok, [{F, Value, Size} | Acc], Rest};
                 SomethingElse ->
                     Err = io_lib:format("FIX header mismatch. Expected: '~s', got '~s'",
                         [BeginString, SomethingElse]),
@@ -82,49 +85,51 @@ parse_length(Data, #context{protocol = P, data = _D}, Acc) ->
     {ok, F} = erlyfix_protocol:lookup(P, {field, by_name, 'BodyLength' }),
     case parse_tagvalue(Data, F) of
         {error, Reason} -> {error, Reason};
-        {not_found, Data} -> no_enough_data;
-        {ok, BodyLength, Rest} -> {ok, [{F, BodyLength} | Acc], Rest}
+        not_found -> no_enough_data;
+        {ok, BodyLength, Size, Rest} -> {ok, [{F, BodyLength, Size} | Acc], Rest}
     end.
 
-confirm_length(Data, _Ctx, Acc) ->
-    [{_F_Length, BodyLength} | _T] = Acc,
-    case byte_size(Data) >= BodyLength of
+confirm_length({_List, Size} = Data, _Ctx, Acc) ->
+    [{_F_Length, BodyLength, _TagSize} | _T] = Acc,
+    case Size >= BodyLength of
         true -> {ok, Acc, Data};
         false -> no_enough_data
     end.
 
-extract_checksum(Data, #context{protocol = P, data = _D}, Acc) ->
-    [{_F_length, BodyLength} | Acc0] = Acc,
+extract_checksum({List, Size}, #context{protocol = P, data = _D}, Acc) ->
+    [{_F_length, BodyLength, _F_Lengt_Size} | _T] = Acc,
     {ok, F} = erlyfix_protocol:lookup(P, {field, by_name, 'CheckSum' }),
     TagLength = iolist_size(io_lib:format(<<"~B=xxx", 1>>, [F#field.number])),
-    <<Body:BodyLength/binary, TagData:TagLength/binary, NextMessage/binary>> = Data,
-    case parse_tagvalue(TagData, F) of
+    {Body, Tail} = lists:split(BodyLength, List),
+    {TagData, NextMessage} = lists:split(TagLength, Tail),
+    case parse_tagvalue({TagData, TagLength}, F) of
         {error, Reason} -> {error, Reason};
-        {not_found, Data} ->
+        not_found ->
             Err = io_lib:format("Checksum tag not found in '~s'", [TagData]),
             Reason = erlang:iolist_to_binary(Err),
             {error, Reason};
-        {ok, Value, Rest} ->
+        {ok, Value, _TagLength, _Rest} ->
             case re:run(Value, <<"\\d{3}">>) of
                 {match,[{0,3}]} ->
                     Checksum = binary_to_integer(Value),
-                    {ok, [{F, Checksum, TagLength}, {next_message, NextMessage} | Acc], Body};
+                    BytesLeft = Size - (BodyLength + TagLength),
+                    MessageBody = {Body, BodyLength},
+                    {ok, [{F, Checksum, TagLength}, {next_message, {NextMessage, BytesLeft}} | Acc], MessageBody};
                 _SomethingElse ->
-                    Err = io_lib:format("Checksum format mismatch: 's' ",[Value]),
+                    Err = io_lib:format("Checksum format mismatch: '~s' ",[Value]),
                     Reason = erlang:iolist_to_binary(Err),
                     {error, Reason}
             end
     end.
 
-confirm_checksum(Body, #context{protocol = P, data = Data}, Acc) ->
+confirm_checksum(Body, #context{protocol = _P, data = {List, Size}}, Acc) ->
     [{F, Checksum, ChecksumSize} | Acc0 ] = Acc,
-    TotalSize = byte_size(Data),
-    CheckSummedSize = TotalSize - ChecksumSize,
-    <<SubjectData:CheckSummedSize/binary, _Tag:ChecksumSize/binary>> = Data,
-    ActualChecksum = erlyfix_utils:checksum(binary_to_list(SubjectData)),
+    CheckSummedSize = Size - ChecksumSize,
+    {SubjectData, _Tail} = lists:split(CheckSummedSize, List),
+    ActualChecksum = erlyfix_utils:checksum(SubjectData),
     case Checksum =:= ActualChecksum of
         true ->
-            {ok, [{F, Checksum} | Acc0], Body};
+            {ok, [{F, Checksum, ChecksumSize} | Acc0], Body};
         false ->
             Err = io_lib:format("Checksum mismatch. Expected: '~B', got '~B'",
                 [Checksum, ActualChecksum]),
@@ -137,13 +142,13 @@ extract_message_type(Body, #context{protocol = P, data = _D}, Acc) ->
     case parse_tagvalue(Body, F) of
         {error, Reason} -> {error, Reason};
         {not_found, Body} -> no_enough_data;
-        {ok, MsgTypeValue, RestOfBody} ->
+        {ok, MsgTypeValue, TagSize, RestOfBody} ->
              try binary_to_existing_atom(MsgTypeValue, latin1) of
                 MsgType ->
                     case erlyfix_protocol:lookup(P, {message, by_type, MsgType }) of
                         {ok, Message} ->
                             % special case, we put Message on top of accumulator
-                            {ok, [Message, {F, MsgTypeValue} | Acc], RestOfBody};
+                            {ok, [Message, {F, MsgTypeValue, TagSize} | Acc], RestOfBody};
                         not_found ->
                             Err = io_lib:format("Unknown message type '~s'", [MsgTypeValue]),
                             Reason = erlang:iolist_to_binary(Err),
@@ -176,12 +181,12 @@ parse_managed_fields(Data, P) ->
     ],
     parse_pipeline(Data, #context{ protocol = P, data = Data}, [], Fs).
 
-parse_tags(<<"">>, _P, Acc) -> Acc;
+parse_tags({_L, 0}, _P, Acc) -> {ok, Acc};
 parse_tags(Body, P, Acc) ->
     case parse_tagpair(Body) of
-        {ok, {FieldNo, Value}, Rest} ->
+        {ok, {FieldNo, Value, TagSize} = Tag, Rest} ->
             case erlyfix_protocol:lookup(P, {field, by_number, FieldNo}) of
-                {ok, F} -> parse_tags(Rest, P, [ {F, Value} | Acc ]);
+                {ok, F} -> parse_tags(Rest, P, [ {F, Value, TagSize} | Acc ]);
                 not_found ->
                     Err = io_lib:format("Unknown field '~B'", [FieldNo]),
                     Reason = erlang:iolist_to_binary(Err),
@@ -212,9 +217,11 @@ finish_classify_scope(L, {Scope, _C4N}, MandatoryLeft, Acc) ->
 
 classify_scope([], Current, MandatoryLeft, Acc) ->
     finish_classify_scope([], Current, MandatoryLeft, Acc);
-classify_scope([H | T] = L, {Scope, C4N} = Current, MandatoryLeft, Acc) ->
-    {F, V} = H,
-    % ?DEBUG(F#field.name),
+classify_scope([H | T] = L, {_Scope, C4N} = Current, MandatoryLeft, Acc) ->
+    %?DEBUG(H),
+    {F, V, _Size} = H,
+    %?DEBUG(F),
+    %?DEBUG(F#field.name),
     case maps:find(F#field.name, C4N) of
         {ok, F} ->
             MandatoryLeft2 = maps:remove(F#field.name, MandatoryLeft),
@@ -234,11 +241,11 @@ start_classify_scope(List, {Scope, ScopeCTX, C4N, MC}) ->
     classify_scope(List, {Scope, C4N}, MC, [{start, Scope, ScopeCTX}]).
 
 
-classify([], Candidates, Acc) ->
+classify([], _Candidates, Acc) ->
     Acc1 = lists:reverse(Acc),
     Acc2 = lists:flatten(Acc1),
     {ok, Acc2};
-classify([H | T], [], Acc) ->
+classify([H | _T], [], _Acc) ->
     {F, _V} = H,
     Err = io_lib:format("Unknown filed '~s'", [F#field.name]),
     Reason = erlang:iolist_to_binary(Err),
@@ -258,7 +265,8 @@ parse(Data, P) ->
             % reconstruct original tags sequence
             Acc1 = [TagMessageType | Acc0],
             case parse_tags(RestOfBody, P, Acc1) of
-                Acc2 ->
+                {ok, Acc2} ->
+                    %?DEBUG(Acc2),
                     % reconstruct original tags sequence
                     Acc3 = lists:reverse([TagChecksum | Acc2]),
                     H = P#protocol.header,
@@ -268,9 +276,10 @@ parse(Data, P) ->
                         {body, {}, Message#message.composite4name, Message#message.mandatoryComposites},
                         {trailer, {}, T#trailer.composite4name, T#trailer.mandatoryComposites}
                     ],
-                    R = classify(Acc3, Scopes, []),
-                    % ?DEBUG(R),
-                    R;
+                    case classify(Acc3, Scopes, []) of
+                        {ok, Acc4} -> {ok, Message#message.name, Acc4, RestData};
+                        _OtherResult -> _OtherResult
+                    end;
                 _OtherResult -> _OtherResult
             end;
         _OtherResult -> _OtherResult

@@ -15,12 +15,15 @@ parse_header_test() ->
         "34=1", 1, "52=20090107-18:15:16", 1, "98=0", 1, "108=60", 1, "384=2", 1,
         "372=abc", 1, "385=S", 1, "372=def", 1, "385=R", 1, "10=229", 1
     >>,
-    {ok, Message} = erlyfix_parser:parse(M, P),
+    IOList = binary_to_list(M),
+    Size = length(IOList),
+    % ?DEBUG(erlyfix_parser:parse({IOList, Size}, P)),
+    {ok, 'Logon', TagsMarkup, {"", 0}} = erlyfix_parser:parse({IOList, Size}, P),
     GetField = fun(Name) ->
         {ok, F} = erlyfix_protocol:lookup(P, {field, by_name, Name}),
         F
     end,
-    Message_Expected = [
+    Markup_Expected = [
         {start, header,{}},
             {field, GetField('BeginString'), <<"FIX.4.4">>},
             {field, GetField('BodyLength'), 90},
@@ -44,7 +47,7 @@ parse_header_test() ->
             {field, GetField('CheckSum'), 229},
         {finish,trailer}
     ],
-    ?DEBUG(Message_Expected),
-    ?DEBUG(Message),
-    ?assertEqual(Message_Expected, Message).
+    ?DEBUG(Markup_Expected),
+    ?DEBUG(TagsMarkup),
+    ?assertEqual(Markup_Expected, TagsMarkup).
 
