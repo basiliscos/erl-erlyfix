@@ -2,7 +2,7 @@
 -include("erlyfix_records.hrl").
 -define(DEBUG(X), io:format("DEBUG ~p:~p ~p~n",[?MODULE, ?LINE, X])).
 
--export([serialize_field/3, serialize_field/4, convert/2]).
+-export([serialize_field/3, serialize_field/4, validate/2, convert/2, as_label/2]).
 
 serialize_field({Size, Acc}, F, raw, Value) ->
     Value_Bits = if
@@ -36,26 +36,50 @@ serialize_field({Size, Acc}, F, RawValue) ->
         {error, Descr} -> {error, Descr}
     end.
 
-check_and_convert('STRING', Value) ->
+validate_by_re(Value, Size, Re) ->
+    case re:run(Value, Re) of
+        {match,[{0,Size}]} -> ok;
+        _Else              -> error
+    end.
+
+validate_field('STRING', Value, _Size) ->
     case re:run(Value, <<1>>) of
-        nomatch -> {ok, Value};
-        _Found -> error
+        {match, _Any} -> error;
+        nomatch       -> ok
     end;
-check_and_convert('LENGTH', Value) ->
-    Size = byte_size(Value),
-    case re:run(Value, <<"\\d+">>) of
-        {match,[{0,Size}]} -> {ok, binary_to_integer(Value)};
-        nomatch -> error;
-        _PatrialMatch -> error
+validate_field('LENGTH', Value, Size) -> validate_by_re(Value, Size, <<"\\d+">>);
+validate_field('INT', Value, Size) -> validate_by_re(Value, Size, <<"-?\\d+">>);
+validate_field('FLOAT', Value, Size) -> validate_by_re(Value, Size, <<"-?\\d+(?:.\\d+)?">>);
+validate_field('CHAR', Value, Size) ->
+    case Size of
+        1    -> validate_field('STRING', Value, Size);
+        _Any -> error
+    end;
+validate_field('DATA', _Value, _Size) -> ok.
+
+
+validate(Value, F) when is_binary(Value) ->
+    validate_field(F#field.type, Value, byte_size(Value)).
+
+
+convert_field('LENGTH', Value) -> binary_to_integer(Value);
+convert_field('INT', Value) -> binary_to_integer(Value);
+convert_field('FLOAT', Value) -> binary_to_float(Value);
+convert_field('STRING', Value) -> Value;
+convert_field('DATA', Value) -> Value.
+
+convert(Value, F) -> convert_field(F#field.type, Value).
+
+as_label(Value, F) when is_binary(Value) ->
+    try binary_to_existing_atom(Value, latin1) of
+        AtomValue ->
+            case maps:find(AtomValue, F#field.value4key) of
+                {ok, V} -> V#value_def.description;
+                error -> not_found
+            end
+    catch
+        error:badarg -> not_found
     end.
 
 
-convert(Value, F) when is_binary(Value) ->
-    case check_and_convert(F#field.type, Value) of
-        error ->
-            Err = io_lib:format("Value '~s' does not match field '~s' validation", [Value, F#field.name]),
-            Reason = erlang:iolist_to_binary(Err),
-            {error, Reason};
-        {ok, ConvertedValue} -> {ok, ConvertedValue}
-    end.
 

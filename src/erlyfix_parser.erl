@@ -17,7 +17,8 @@ parse_tagpair({List, Size}) ->
                         {match, [{0, TagSize}]} ->
                             %?DEBUG(Rest),
                             PairSize = iolist_size(Pair) + 1,
-                            {ok, {binary_to_integer(Tag), Value, PairSize}, {Rest, Size - PairSize}};
+                            Binarized = iolist_to_binary(Value),
+                            {ok, {binary_to_integer(Tag), Binarized, PairSize}, {Rest, Size - PairSize}};
                         _SomethingElse ->
                             Err = io_lib:format("Tag '~s' is not a number", [Tag]),
                             Reason = erlang:iolist_to_binary(Err),
@@ -42,9 +43,13 @@ parse_tagvalue(Data, F) ->
                     Reason = erlang:iolist_to_binary(Err),
                     {error, Reason};
                 true ->
-                    case erlyfix_fields:convert(BinaryValue, F) of
-                        {ok, Value} -> {ok, Value, Size, Rest};
-                        {error, Reason} -> {error, Reason}
+                    case erlyfix_fields:validate(BinaryValue, F) of
+                        ok    -> {ok, BinaryValue, Size, Rest};
+                        error ->
+                            Err = io_lib:format("Value '~s' does pass validatation for field '~s'",
+                                [BinaryValue, F#field.name]),
+                            Reason = erlang:iolist_to_binary(Err),
+                            {error, Reason}
                     end
             end;
         SomethingElse -> SomethingElse
@@ -62,6 +67,7 @@ parse_introduction(Data, #context{protocol = P, data = _D}, Acc)->
             LengthMin = byte_size(integer_to_binary(F#field.number))
                 + 1 % '=' aka separator
                 + byte_size(BeginString),
+            % ?DEBUG(Data),
             case byte_size(Data) >= LengthMin of
                 false -> no_enough_data;
                 true ->
@@ -86,7 +92,10 @@ parse_length(Data, #context{protocol = P, data = _D}, Acc) ->
     case parse_tagvalue(Data, F) of
         {error, Reason} -> {error, Reason};
         not_found -> no_enough_data;
-        {ok, BodyLength, Size, Rest} -> {ok, [{F, BodyLength, Size} | Acc], Rest}
+        {ok, BinaryValue, Size, Rest} ->
+            % It should not throw, as it already bypassed validation
+            BodyLength = erlyfix_fields:convert(BinaryValue, F),
+            {ok, [{F, BodyLength, Size} | Acc], Rest}
     end.
 
 confirm_length({_List, Size} = Data, _Ctx, Acc) ->
@@ -155,7 +164,7 @@ extract_message_type(Body, #context{protocol = P, data = _D}, Acc) ->
                             {error, Reason}
                     end
             catch
-                badarg ->
+                error:badarg ->
                     Err = io_lib:format("Unknown message type '~s'", [MsgTypeValue]),
                     Reason = erlang:iolist_to_binary(Err),
                     {error, Reason}
@@ -184,7 +193,7 @@ parse_managed_fields(Data, P) ->
 parse_tags({_L, 0}, _P, Acc) -> {ok, Acc};
 parse_tags(Body, P, Acc) ->
     case parse_tagpair(Body) of
-        {ok, {FieldNo, Value, TagSize} = Tag, Rest} ->
+        {ok, {FieldNo, Value, TagSize}, Rest} ->
             case erlyfix_protocol:lookup(P, {field, by_number, FieldNo}) of
                 {ok, F} -> parse_tags(Rest, P, [ {F, Value, TagSize} | Acc ]);
                 not_found ->
