@@ -116,3 +116,39 @@
     message4type        :: map()
 }).
 
+% field types
+
+-record(monthyear_week, {
+    year    :: non_neg_integer(),
+    month   :: non_neg_integer(),
+    week    :: non_neg_integer()
+}).
+
+-record(monthyear_day, {
+    year    :: non_neg_integer(),
+    month   :: non_neg_integer(),
+    day     :: non_neg_integer()
+}).
+
+-type monthyear() :: #monthyear_week{} | #monthyear_day{}.
+
+-record(utc_time, {
+    hour     :: non_neg_integer(),
+    minute   :: non_neg_integer(),
+    second   :: non_neg_integer(),
+    ms       :: non_neg_integer()
+}).
+-type utc_time() :: #utc_time{}.
+
+-record(fix_date, {
+    year    :: non_neg_integer(),
+    month   :: non_neg_integer(),
+    day     :: non_neg_integer()
+}).
+-type fix_date() :: #fix_date{}.
+
+-record(utc_timestamp, {
+    date :: fix_date(),
+    time :: utc_time()
+}).
+-type utc_timestamp() :: #utc_timestamp{}.
