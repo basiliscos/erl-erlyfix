@@ -36,10 +36,11 @@ serialize_field({Size, Acc}, F, RawValue) ->
         {error, Descr} -> {error, Descr}
     end.
 
-extract_from_binary(Binary, Submatches, Converter) ->
+extract(L0, Submatches, Converter) ->
     F = fun({Skip, Count}) ->
-        <<_S:Skip/binary, V:Count/binary, _T/binary>> = Binary,
-        Converter(V)
+        L1 = lists:nthtail(Skip, L0),
+        {L2, _L3} = lists:split(Count, L1),
+        Converter(L2)
     end,
     lists:map(F, Submatches).
 
@@ -73,7 +74,7 @@ validate_field('UTCTIMEONLY', Value, Size) ->
     Re = <<"(\\d{2}):(\\d{2}):(\\d{2})(?:\\.(\\d{3}))?">>,
     case re:run(Value, Re) of
         {match, [{0, Size} | Submatches ]} ->
-            [H, M, S | T] = extract_from_binary(Value, Submatches, fun binary_to_integer/1),
+            [H, M, S | T] = extract(Value, Submatches, fun list_to_integer/1),
             SS = case T of [] -> 0; [SubSeconds] -> SubSeconds end,
             R = ((H >= 0) andalso (H < 24)) andalso
                 ((M >= 0) andalso (M < 60)) andalso
@@ -88,13 +89,13 @@ validate_field('MONTHYEAR', Value, Size) ->
         {match, [{0, Size}, YY, MM | Rest ]} ->
             R = case Rest of
                 [] ->
-                    [Y, M] = extract_from_binary(Value, [YY, MM], fun binary_to_integer/1),
+                    [Y, M] = extract(Value, [YY, MM], fun list_to_integer/1),
                     (Y > 1) andalso (M < 13);
                 [_W,_W, WW] ->
-                    [Y, M, W] = extract_from_binary(Value, [YY, MM, WW], fun binary_to_integer/1),
+                    [Y, M, W] = extract(Value, [YY, MM, WW], fun list_to_integer/1),
                     (Y > 1) andalso (M < 13) andalso (W > 0) andalso (W < 6);
                 [DD, _S1, _S2, DD] ->
-                    [Y, M, D] = extract_from_binary(Value, [YY, MM, DD], fun binary_to_integer/1),
+                    [Y, M, D] = extract(Value, [YY, MM, DD], fun list_to_integer/1),
                     (Y > 1) andalso (M < 13) andalso (D < 32)
             end,
             case R of  true -> ok; false -> error end;
@@ -104,7 +105,7 @@ validate_field('LOCALMKTDATE', Value, Size) ->
     Re = <<"(\\d{4})(\\d{2})(\\d{2})">>,
     case re:run(Value, Re) of
         {match, [{0, Size} | Submatches ]} ->
-            [_Y, M, D] = extract_from_binary(Value, Submatches, fun binary_to_integer/1),
+            [_Y, M, D] = extract(Value, Submatches, fun list_to_integer/1),
             R = (M < 13) andalso (D < 32),
             case R of  true -> ok; false -> error end;
         _Any -> error
@@ -112,7 +113,7 @@ validate_field('LOCALMKTDATE', Value, Size) ->
 validate_field('UTCTIMESTAMP', Value, Size) ->
     case re:run(Value, <<"(.+)-(.+)">>) of
         {match, [{0, Size}, {_D_pos, D_sz} = D_ref, {_T_pos, T_sz} = T_ref ]} ->
-            [D_Bin, T_Bin] = extract_from_binary(Value, [D_ref, T_ref], fun(X) -> X end),
+            [D_Bin, T_Bin] = extract(Value, [D_ref, T_ref], fun(X) -> X end),
             case validate_field('LOCALMKTDATE', D_Bin, D_sz) of
                 ok -> validate_field('UTCTIMEONLY', T_Bin, T_sz);
                 error -> error
@@ -133,17 +134,17 @@ validate_field('PRICEOFFSET', Value, Size) -> validate_field('FLOAT', Value, Siz
 validate_field('UTCDATEONLY', Value, Size) -> validate_field('LOCALMKTDATE', Value, Size).
 
 
-validate(Value, F) when is_binary(Value) ->
-    validate_field(F#field.type, Value, byte_size(Value)).
+validate({Value, ValueSize}, F) when is_list(Value) ->
+    validate_field(F#field.type, Value, ValueSize).
 
 
-convert_field('LENGTH', Value) -> binary_to_integer(Value);
-convert_field('INT', Value) -> binary_to_integer(Value);
+convert_field('LENGTH', Value) -> list_to_integer(Value);
+convert_field('INT', Value) -> list_to_integer(Value);
 convert_field('FLOAT', Value) ->
-    try binary_to_float(Value) of
+    try list_to_float(Value) of
         V -> V
     catch
-        error:badarg -> binary_to_integer(Value)
+        error:badarg -> list_to_integer(Value)
     end;
 convert_field('STRING', Value) -> Value;
 convert_field('CURRENCY', Value) -> Value;
@@ -152,29 +153,29 @@ convert_field('COUNTRY', Value) -> Value;
 convert_field('UTCTIMEONLY', Value) ->
     Re = <<"(\\d{2}):(\\d{2}):(\\d{2})(?:\\.(\\d{3}))?">>,
     {match, [{0, _Total} | Submatches ]} = re:run(Value, Re),
-    [H, M, S | T] = extract_from_binary(Value, Submatches, fun binary_to_integer/1),
+    [H, M, S | T] = extract(Value, Submatches, fun list_to_integer/1),
     SS = case T of [] -> 0; [SubSeconds] -> SubSeconds end,
     #utc_time { hour = H, minute = M, second = S, ms = SS};
 convert_field('MONTHYEAR', Value) ->
     Re = <<"(\\d{4})(\\d{2})(?|((w(\\d))|(\\d{2})))?">>,
     {match, [{0, _Size}, YY, MM | Rest]} = re:run(Value, Re),
-    [Y, M] = extract_from_binary(Value, [YY, MM], fun binary_to_integer/1),
+    [Y, M] = extract(Value, [YY, MM], fun list_to_integer/1),
     case Rest of
         [] -> #monthyear_week{ year = Y, month = M, week = 0 };
         [_W,_W, WW] ->
-            [W] = extract_from_binary(Value, [WW], fun binary_to_integer/1),
+            [W] = extract(Value, [WW], fun list_to_integer/1),
             #monthyear_week{ year = Y, month = M, week = W };
         [DD, _S1, _S2, DD] ->
-            [D] = extract_from_binary(Value, [DD], fun binary_to_integer/1),
+            [D] = extract(Value, [DD], fun list_to_integer/1),
             #monthyear_day{ year = Y, month = M, day = D }
     end;
 convert_field('LOCALMKTDATE', Value) ->
     Re = <<"(\\d{4})(\\d{2})(\\d{2})">>,
     {match, [{0, _Total} | Submatches ]} = re:run(Value, Re),
-    [Y, M, D] = extract_from_binary(Value, Submatches, fun binary_to_integer/1),
+    [Y, M, D] = extract(Value, Submatches, fun list_to_integer/1),
     #fix_date { year = Y, month = M, day = D};
 convert_field('UTCTIMESTAMP', Value) ->
-    [V_Date, V_Time] = re:split(Value, <<"-">>),
+    [V_Date, V_Time] = re:split(Value, <<"-">>, [{return, list}]),
     #utc_timestamp {
         date = convert_field('LOCALMKTDATE', V_Date),
         time = convert_field('UTCTIMEONLY', V_Time)
@@ -194,8 +195,8 @@ convert_field('UTCDATEONLY', Value) -> convert_field('LOCALMKTDATE', Value).
 
 convert(Value, F) -> convert_field(F#field.type, Value).
 
-as_label(Value, F) when is_binary(Value) ->
-    try binary_to_existing_atom(Value, latin1) of
+as_label(Value, F) when is_list(Value) ->
+    try list_to_existing_atom(Value) of
         AtomValue ->
             case maps:find(AtomValue, F#field.value4key) of
                 {ok, V} -> V#value_def.description;

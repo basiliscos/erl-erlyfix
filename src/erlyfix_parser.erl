@@ -7,50 +7,110 @@
 
 -record(context, {protocol, data}).
 
-parse_tagpair({List, Size}) ->
-    case re:split(List, <<1>>, [{parts, 2}, {return, list}]) of
-        [Pair, Rest] ->
-            case re:split(Pair, <<"=">>, [{parts, 2}, {return, iodata}]) of
-                [Tag, Value] ->
-                    TagSize = iolist_size(Tag),
-                    case re:run(Tag, <<"\\d+">>) of
-                        {match, [{0, TagSize}]} ->
-                            %?DEBUG(Rest),
-                            PairSize = iolist_size(Pair) + 1,
-                            Binarized = iolist_to_binary(Value),
-                            {ok, {binary_to_integer(Tag), Binarized, PairSize}, {Rest, Size - PairSize}};
-                        _SomethingElse ->
-                            Err = io_lib:format("Tag '~s' is not a number", [Tag]),
-                            Reason = erlang:iolist_to_binary(Err),
-                            {error, Reason}
-                    end;
-                [Rest] ->
-                    Err = io_lib:format("Sequence '~s' does not match tagpair", [Pair]),
+pull_tagno({List, Size}) ->
+    case re:split(List, <<"=">>, [{parts, 2}, {return, list}]) of
+        [TagNoList, Rest] ->
+            TagNoSize = length(TagNoList),
+            case re:run(TagNoList, <<"\\d+">>) of
+                {match, [{0, TagNoSize}]} ->
+                    {ok, list_to_integer(TagNoList), TagNoSize, {Rest, Size-(TagNoSize+1) }};
+                _SomethingElse ->
+                    Err = io_lib:format("Tag '~s' is not a number", [TagNoList]),
                     Reason = erlang:iolist_to_binary(Err),
                     {error, Reason}
             end;
         [List] -> not_found
     end.
 
+pull_tagvalue({List, Size}, any_size) ->
+    case re:split(List, <<1>>, [{parts, 2}, {return, list}]) of
+        [TagValue, Rest] ->
+            TagValueSize = length(TagValue),
+            {ok, TagValue, TagValueSize, {Rest, Size - (TagValueSize + 1)}};
+        [List] -> not_found
+    end;
+pull_tagvalue({List, Size}, TagValueSize) ->
+    case (Size + 1) < TagValueSize of
+        true -> not_found;
+        false ->
+            {TagValue, Rest0} = lists:split(TagValueSize, List),
+            Rest1 = lists:nthtail(1, Rest0),
+            {ok, TagValue, TagValueSize, {Rest1, Size - (TagValueSize + 1)}}
+    end.
+
 parse_tagvalue(Data, F) ->
     N = F#field.number,
-    case parse_tagpair(Data) of
-        {ok, {Tag, BinaryValue, Size}, Rest} ->
-            %?DEBUG(Rest),
-            case Tag =:= N of
-                false ->
-                    Err = io_lib:format("Tag mismatch. Expected: '~w', got '~w'", [N, Tag]),
-                    Reason = erlang:iolist_to_binary(Err),
-                    {error, Reason};
-                true ->
-                    case erlyfix_fields:validate(BinaryValue, F) of
-                        ok    -> {ok, BinaryValue, Size, Rest};
+    case pull_tagno(Data) of
+        {ok, N, TagNoSize, Rest0} ->
+            case pull_tagvalue(Rest0, any_size) of
+                {ok, TagValue, TagValueSize, Rest1} ->
+                    case erlyfix_fields:validate({TagValue, TagValueSize}, F) of
+                        ok    -> {ok, TagValue, TagNoSize + TagValueSize + 1, Rest1};
                         error ->
                             Err = io_lib:format("Value '~s' does pass validatation for field '~s'",
-                                [BinaryValue, F#field.name]),
+                                [TagValue, F#field.name]),
                             Reason = erlang:iolist_to_binary(Err),
                             {error, Reason}
-                    end
+                    end;
+                SomethingElse -> SomethingElse
+            end;
+        {ok, K, _TagNoSize, _Rest} ->
+            Err = io_lib:format("Tag mismatch. Expected: '~w', got '~w'", [N, K]),
+            Reason = erlang:iolist_to_binary(Err),
+            {error, Reason};
+        SomethingElse -> SomethingElse
+    end.
+
+tagvalue_size(F, Acc) ->
+    case F#field.type of
+        'DATA' ->
+            case Acc of
+                [H | _T] ->
+                    {F_prev, Value_prev, _TagSize} = H,
+                    case F_prev#field.type of
+                        'LENGTH' ->
+                            DataSize = erlyfix_fields:convert(Value_prev, F_prev),
+                            {ok, DataSize};
+                        _OtherType ->
+                            Err = io_lib:format("Expected that 'LENGTH' tag should precede the"
+                                ++ " current 'DATA', meanwhile got '~w'", [F_prev#field.type]),
+                            Reason = erlang:iolist_to_binary(Err),
+                            {error, Reason}
+                    end;
+                _Empty ->
+                    Err = io_lib:format("Current 'DATA' tag is not preceded with 'LENGTH' tag"),
+                    Reason = erlang:iolist_to_binary(Err),
+                    {error, Reason}
+            end;
+        _AnyOtherType -> {ok, any_size}
+    end.
+
+
+parse_tagpair(Data, P, Acc) ->
+    case pull_tagno(Data) of
+        {ok, FieldNo, TagNoSize, Rest0} ->
+            case erlyfix_protocol:lookup(P, {field, by_number, FieldNo}) of
+                {ok, F} ->
+                    case tagvalue_size(F, Acc) of
+                        {ok, ExpectdTagSize} ->
+                            case pull_tagvalue(Rest0, ExpectdTagSize) of
+                                {ok, TagValue, TagValueSize, Rest1} ->
+                                    case erlyfix_fields:validate({TagValue, TagValueSize}, F) of
+                                        ok    -> {ok, F, TagValue, TagNoSize + TagValueSize, Rest1};
+                                        error ->
+                                            Str = "Value '~s' does pass validatation for field '~s'",
+                                            Err = io_lib:format(Str, [TagValue, F#field.name]),
+                                            Reason = erlang:iolist_to_binary(Err),
+                                            {error, Reason}
+                                    end;
+                                SomethingElse -> SomethingElse
+                            end;
+                        SomethingElse -> SomethingElse
+                    end;
+                not_found ->
+                    Err = io_lib:format("Unknown field '~B'", [FieldNo]),
+                    Reason = erlang:iolist_to_binary(Err),
+                    {error, Reason}
             end;
         SomethingElse -> SomethingElse
     end.
@@ -59,7 +119,7 @@ parse_introduction(Data, #context{protocol = P, data = _D}, Acc)->
     {ok, F} = erlyfix_protocol:lookup(P, {field, by_name, 'BeginString' }),
     Major = P#protocol.protocol_version#protocol_version.major,
     Minor = P#protocol.protocol_version#protocol_version.minor,
-    BeginString = erlang:iolist_to_binary(io_lib:format("FIX.~B.~B", [Major, Minor])),
+    BeginString = lists:flatten(io_lib:format("FIX.~B.~B", [Major, Minor])),
 
     case parse_tagvalue(Data, F) of
         {error, Reason} -> {error, Reason};
@@ -120,7 +180,7 @@ extract_checksum({List, Size}, #context{protocol = P, data = _D}, Acc) ->
         {ok, Value, _TagLength, _Rest} ->
             case re:run(Value, <<"\\d{3}">>) of
                 {match,[{0,3}]} ->
-                    Checksum = binary_to_integer(Value),
+                    Checksum = list_to_integer(Value),
                     BytesLeft = Size - (BodyLength + TagLength),
                     MessageBody = {Body, BodyLength},
                     {ok, [{F, Checksum, TagLength}, {next_message, {NextMessage, BytesLeft}} | Acc], MessageBody};
@@ -152,7 +212,7 @@ extract_message_type(Body, #context{protocol = P, data = _D}, Acc) ->
         {error, Reason} -> {error, Reason};
         {not_found, Body} -> no_enough_data;
         {ok, MsgTypeValue, TagSize, RestOfBody} ->
-             try binary_to_existing_atom(MsgTypeValue, latin1) of
+             try list_to_existing_atom(MsgTypeValue) of
                 MsgType ->
                     case erlyfix_protocol:lookup(P, {message, by_type, MsgType }) of
                         {ok, Message} ->
@@ -192,20 +252,14 @@ parse_managed_fields(Data, P) ->
 
 parse_tags({_L, 0}, _P, Acc) -> {ok, Acc};
 parse_tags(Body, P, Acc) ->
-    case parse_tagpair(Body) of
-        {ok, {FieldNo, Value, TagSize}, Rest} ->
-            case erlyfix_protocol:lookup(P, {field, by_number, FieldNo}) of
-                {ok, F} -> parse_tags(Rest, P, [ {F, Value, TagSize} | Acc ]);
-                not_found ->
-                    Err = io_lib:format("Unknown field '~B'", [FieldNo]),
-                    Reason = erlang:iolist_to_binary(Err),
-                    {error, Reason}
-            end;
+    case parse_tagpair(Body, P, Acc) of
+        {ok, F, Value, TagSize, Rest} ->
+            parse_tags(Rest, P, [ {F, Value, TagSize} | Acc ]);
         _OtherResult -> _OtherResult
     end.
 
 classify_group(L, G, V) ->
-    Count = binary_to_integer(V),
+    Count = list_to_integer(V),
     ScopeCTX = {G#group.name, Count},
     C4N = G#group.composite4name,
     MC = G#group.mandatoryComposites,
