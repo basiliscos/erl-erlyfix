@@ -161,7 +161,8 @@ construct_fields({Field4Name, Field4Number}, [FieldDefinition | Rest]) ->
         number = Number,
         type   = FieldDefinition#field_def.type,
         value4key = Value4Key,
-        value4description = Value4Description},
+        value4description = Value4Description,
+        composite4field = #{}},
     Acc = {
         Field4Name#{ Name => Field },
         Field4Number#{ Number => Field}
@@ -189,6 +190,26 @@ zip(Refs, ReverseDefNames) ->
     {Co4Name, MC} = construct_composite_mapping({ #{}, #{} }, RefsDefs),
     {Co4Name, MC}.
 
+
+uplift_non_field(Composite, C4F, UpperC4F) ->
+    L0 = maps:keys(C4F),
+    L1 = lists:map(fun(F) -> {F, Composite} end, L0),
+    CC4Field = maps:from_list(L1),
+    maps:merge(UpperC4F, CC4Field).
+
+uplift([], C4Field) -> C4Field;
+uplift([H | T], C4Field) ->
+    case decompose(H) of
+        {field, F} -> uplift(T, C4Field#{F => F});
+        {group, _Name, _C4N, _MC} ->
+            C4F1 = uplift_non_field(H, H#group.composite4field, C4Field),
+            uplift(T, C4F1);
+        {composite, _Name, _C4N, _MC} ->
+            C4F1 = uplift_non_field(H, H#component.composite4field,  C4Field),
+            uplift(T, C4F1)
+    end.
+uplift(C4Name) -> uplift(maps:values(C4Name), #{}).
+
 get_composites(Acc, _C4Name, _F4Name, []) -> {ok, Acc};
 get_composites(Acc, C4Name, F4Name, [H | T]) ->
     case element(1, H) of
@@ -210,7 +231,12 @@ get_composites(Acc, C4Name, F4Name, [H | T]) ->
             case get_composites([], C4Name, F4Name, CompositeRefs) of
                 {ok, SubCompositesNames} ->
                     {Co4Name, MC} = zip(CompositeRefs, SubCompositesNames),
-                    Composite = #group{ name = Name, composite4name = Co4Name, mandatoryComposites = MC},
+                    Composite = #group{
+                        name = Name,
+                        composite4name = Co4Name,
+                        mandatoryComposites = MC,
+                        composite4field = uplift(Co4Name)
+                    },
                     get_composites([{Name, Composite} | Acc], C4Name, F4Name, T);
                 not_found -> not_found
             end
@@ -227,7 +253,12 @@ construct_components(C4Name, F4Name, Queue) ->
                 {ok, SubCompositesNames} ->
                     %io:format("found subcomposites ~p :: ~p~n", [ComponentRef, SubCompositesNames]),
                     {Co4Name, MC} = zip(SubCompositeRefs, SubCompositesNames),
-                    Composite = #component{ name = Name, composite4name = Co4Name, mandatoryComposites = MC},
+                    Composite = #component{
+                        name = Name,
+                        composite4name = Co4Name,
+                        mandatoryComposites = MC,
+                        composite4field = uplift(Co4Name)
+                    },
                     C4NameNew = C4Name#{ Name => Composite },
                     construct_components(C4NameNew, F4Name, QLeft);
                 not_found ->
@@ -235,6 +266,8 @@ construct_components(C4Name, F4Name, Queue) ->
                     construct_components(C4Name, F4Name, Q2)
             end
     end.
+
+
 
 construct_messages(Acc, _C4Name, _F4Name, []) -> Acc;
 construct_messages({M4Name, M4Type}, C4Name, F4Name, [H | T]) ->
@@ -246,7 +279,8 @@ construct_messages({M4Name, M4Type}, C4Name, F4Name, [H | T]) ->
         type = Type,
         category = Category,
         composite4name = Co4Name,
-        mandatoryComposites = MC
+        mandatoryComposites = MC,
+        composite4field = uplift(Co4Name)
     },
     M4NameNew = M4Name#{ Name => Message},
     M4TypeNew = M4Type#{ Type => Message},
@@ -266,13 +300,21 @@ construct(Map) ->
     HeaderRefs = maps:get(header, Map),
     {ok, HeaderCompositeNames} = get_composites([], C4Name, Field4Name, HeaderRefs),
     {H_C4Name, H_MC} = zip(HeaderRefs, HeaderCompositeNames),
-    Header = #header{ composite4name = H_C4Name, mandatoryComposites = H_MC },
+    Header = #header{
+        composite4name = H_C4Name,
+        mandatoryComposites = H_MC,
+        composite4field = uplift(H_C4Name)
+    },
 
     % trailer
     TrailerRefs = maps:get(trailer, Map),
     {ok, TrailerCompositeNames} = get_composites([], C4Name, Field4Name, TrailerRefs),
     {T_C4Name, T_MC} = zip(TrailerRefs, TrailerCompositeNames),
-    Trailer = #trailer{ composite4name = T_C4Name, mandatoryComposites = T_MC },
+    Trailer = #trailer{
+        composite4name = T_C4Name,
+        mandatoryComposites = T_MC,
+        composite4field = uplift(T_C4Name)
+    },
 
     % messages
     MessagesRefs = maps:get(messages, Map),

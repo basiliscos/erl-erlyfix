@@ -65,33 +65,38 @@
     number              :: integer(),
     type                :: string(),
     value4key           :: map(),
-    value4description   :: map()
+    value4description   :: map(),
+    composite4field     :: map()
 }).
 -type field() :: #field{}.
 
 -record(component, {
     name                :: string(),
     composite4name      :: map(),
-    mandatoryComposites :: map()
+    mandatoryComposites :: map(),
+    composite4field     :: map()
 }).
 -type component() :: #component{}.
 
 -record(group, {
     name                :: string(),
     composite4name      :: map(),
-    mandatoryComposites :: map()
+    mandatoryComposites :: map(),
+    composite4field     :: map()
 }).
 -type group() :: #group{}.
 
 -record(header, {
     composite4name      :: map(),
-    mandatoryComposites :: map()
+    mandatoryComposites :: map(),
+    composite4field     :: map()
 }).
 -type header() :: #header{}.
 
 -record(trailer, {
     composite4name      :: map(),
-    mandatoryComposites :: map()
+    mandatoryComposites :: map(),
+    composite4field     :: map()
 }).
 -type trailer() :: #trailer{}.
 
@@ -100,7 +105,8 @@
     type                :: string(),
     category            :: string(),
     composite4name      :: map(),
-    mandatoryComposites :: map()
+    mandatoryComposites :: map(),
+    composite4field     :: map()
 }).
 -type message() :: #message{}.
 

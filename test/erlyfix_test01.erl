@@ -14,7 +14,7 @@ protocol_load_test() ->
         erlyfix_protocol:version(P)),
 
     % simple field
-    {ok, F_account_1} = erlyfix_protocol:lookup(P, {field, by_name, 'Account' }),
+    {ok, F_account_1} = erlyfix_protocol:lookup(P, {field, by_name, 'Account'}),
     ?assertEqual('Account', F_account_1#field.name),
     ?assertEqual(1, F_account_1#field.number),
     ?assertEqual(#{}, F_account_1#field.value4key),
@@ -41,23 +41,28 @@ protocol_load_test() ->
     {ok, _F_Commission} = maps:find('Commission', C_CommissionData#component.composite4name),
     {ok, _F_CommType} = maps:find('CommType', C_CommissionData#component.composite4name),
     {ok, _F_CommCurrency} = maps:find('CommCurrency', C_CommissionData#component.composite4name),
-    {ok, _F_FundRenewWaiv} = maps:find('FundRenewWaiv', C_CommissionData#component.composite4name),
+    {ok, F_FundRenewWaiv} = maps:find('FundRenewWaiv', C_CommissionData#component.composite4name),
+    {ok, F_FundRenewWaiv} = maps:find(F_FundRenewWaiv, C_CommissionData#component.composite4field),
 
     % component with group
     {ok, C_Stipulations} = erlyfix_protocol:lookup(P, {component, 'Stipulations' }),
     {ok, G_NoStipulations} = maps:find('NoStipulations', C_Stipulations#component.composite4name),
     ?assertEqual(error, maps:find('NoStipulations', C_Stipulations#component.mandatoryComposites)),
     ?assertEqual('NoStipulations', G_NoStipulations#group.name),
-    {ok, _F_StipulationType} = maps:find('StipulationType', G_NoStipulations#group.composite4name),
-    {ok, _F_StipulationValue} = maps:find('StipulationValue', G_NoStipulations#group.composite4name),
+    {ok, F_StipulationType} = maps:find('StipulationType', G_NoStipulations#group.composite4name),
+    {ok, F_StipulationValue} = maps:find('StipulationValue', G_NoStipulations#group.composite4name),
+    {ok, G_NoStipulations} = maps:find(F_StipulationType, C_Stipulations#component.composite4field),
+    {ok, G_NoStipulations} = maps:find(F_StipulationValue, C_Stipulations#component.composite4field),
 
     % component with group with component
     {ok, C_NestedParties} = erlyfix_protocol:lookup(P, {component, 'NestedParties' }),
     {ok, G_NoNestedPartyIDs} = maps:find('NoNestedPartyIDs', C_NestedParties#component.composite4name),
     {ok, C_NstdPtysSubGrp} = maps:find('NstdPtysSubGrp', G_NoNestedPartyIDs#group.composite4name),
     {ok, G_NoNestedPartySubIDs} = maps:find('NoNestedPartySubIDs', C_NstdPtysSubGrp#component.composite4name),
-    {ok, _F_NestedPartySubID} = maps:find('NestedPartySubID', G_NoNestedPartySubIDs#group.composite4name),
-    {ok, _F_NestedPartySubIDType} = maps:find('NestedPartySubIDType', G_NoNestedPartySubIDs#group.composite4name),
+    {ok, F_NestedPartySubID} = maps:find('NestedPartySubID', G_NoNestedPartySubIDs#group.composite4name),
+    {ok, F_NestedPartySubIDType} = maps:find('NestedPartySubIDType', G_NoNestedPartySubIDs#group.composite4name),
+    {ok, G_NoNestedPartyIDs} = maps:find(F_NestedPartySubID, C_NestedParties#component.composite4field),
+    {ok, G_NoNestedPartyIDs} = maps:find(F_NestedPartySubIDType, C_NestedParties#component.composite4field),
 
     % component with mandatory group
     {ok, C_CpctyConfGrp} = erlyfix_protocol:lookup(P, {component, 'CpctyConfGrp' }),
