@@ -197,18 +197,22 @@ uplift_non_field(Composite, C4F, UpperC4F) ->
     CC4Field = maps:from_list(L1),
     maps:merge(UpperC4F, CC4Field).
 
-uplift([], C4Field) -> C4Field;
-uplift([H | T], C4Field) ->
-    case decompose(H) of
-        {field, F} -> uplift(T, C4Field#{F => F});
+uplift_list([], _F4Name, C4Field) -> C4Field;
+uplift_list([H | T], F4Name, C4Field) ->
+    %?DEBUG([H | T]),
+    case erlyfix_composite:decompose(H) of
+        {field, F} -> uplift_list(T, F4Name, C4Field#{F => F});
         {group, _Name, _C4N, _MC} ->
             C4F1 = uplift_non_field(H, H#group.composite4field, C4Field),
-            uplift(T, C4F1);
+            % "main" field, pointing to group count and group type
+            {ok, F} = maps:find(H#group.name, F4Name),
+            C4F2 = C4F1#{ F => H},
+            uplift_list(T, F4Name, C4F2);
         {composite, _Name, _C4N, _MC} ->
             C4F1 = uplift_non_field(H, H#component.composite4field,  C4Field),
-            uplift(T, C4F1)
+            uplift_list(T, F4Name, C4F1)
     end.
-uplift(C4Name) -> uplift(maps:values(C4Name), #{}).
+uplift(F4Name, C4Name) -> uplift_list(maps:values(C4Name), F4Name, #{}).
 
 get_composites(Acc, _C4Name, _F4Name, []) -> {ok, Acc};
 get_composites(Acc, C4Name, F4Name, [H | T]) ->
@@ -235,7 +239,7 @@ get_composites(Acc, C4Name, F4Name, [H | T]) ->
                         name = Name,
                         composite4name = Co4Name,
                         mandatoryComposites = MC,
-                        composite4field = uplift(Co4Name)
+                        composite4field = uplift(F4Name, Co4Name)
                     },
                     get_composites([{Name, Composite} | Acc], C4Name, F4Name, T);
                 not_found -> not_found
@@ -257,7 +261,7 @@ construct_components(C4Name, F4Name, Queue) ->
                         name = Name,
                         composite4name = Co4Name,
                         mandatoryComposites = MC,
-                        composite4field = uplift(Co4Name)
+                        composite4field = uplift(F4Name, Co4Name)
                     },
                     C4NameNew = C4Name#{ Name => Composite },
                     construct_components(C4NameNew, F4Name, QLeft);
@@ -280,7 +284,7 @@ construct_messages({M4Name, M4Type}, C4Name, F4Name, [H | T]) ->
         category = Category,
         composite4name = Co4Name,
         mandatoryComposites = MC,
-        composite4field = uplift(Co4Name)
+        composite4field = uplift(F4Name, Co4Name)
     },
     M4NameNew = M4Name#{ Name => Message},
     M4TypeNew = M4Type#{ Type => Message},
@@ -303,7 +307,7 @@ construct(Map) ->
     Header = #header{
         composite4name = H_C4Name,
         mandatoryComposites = H_MC,
-        composite4field = uplift(H_C4Name)
+        composite4field = uplift(Field4Name, H_C4Name)
     },
 
     % trailer
@@ -313,7 +317,7 @@ construct(Map) ->
     Trailer = #trailer{
         composite4name = T_C4Name,
         mandatoryComposites = T_MC,
-        composite4field = uplift(T_C4Name)
+        composite4field = uplift(Field4Name, T_C4Name)
     },
 
     % messages
@@ -358,15 +362,6 @@ lookup(Protocol, Criterium) ->
         error -> not_found
     end.
 
-% decompose composite
-
-decompose(C) when is_record(C, field) -> {field, C};
-decompose(C) when is_record(C, group) -> {group, C#group.name, C#group.composite4name, C#group.mandatoryComposites};
-decompose(C) when is_record(C, component) -> {composite, C#component.name, C#component.composite4name, C#component.mandatoryComposites };
-decompose(C) when is_record(C, header) -> {composite, header, C#header.composite4name, C#header.mandatoryComposites };
-decompose(C) when is_record(C, trailer) -> {composite, trailer, C#trailer.composite4name, C#trailer.mandatoryComposites }.
-
-
 % serialize group item
 serialize_group_item(AccContainer, {P, N, C4N, MC}, []) ->
     serialize_composite(AccContainer, {P, N, C4N, MC}, []);
@@ -403,7 +398,7 @@ serialize_composite(AccContainer, {P, N, C4N, MC}, [H | T]) ->
     case maps:find(Name, C4N) of
         {ok, Composite} ->
             % serialize head (subcomposite)
-            R = case decompose(Composite) of
+            R = case erlyfix_composite:decompose(Composite) of
                 {composite, S_N, S_C4N, S_MC} -> serialize_composite(AccContainer, {P, S_N, S_C4N, S_MC}, erlang:element(2, H));
                 {group, S_N, S_C4N, S_MC} -> serialize_group(AccContainer, {P, S_N, S_C4N, S_MC}, H);
                 {field, F} -> erlyfix_fields:serialize_field(AccContainer, F, erlang:element(2, H))

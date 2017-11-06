@@ -258,13 +258,6 @@ parse_tags(Body, P, Acc) ->
         _OtherResult -> _OtherResult
     end.
 
-classify_group(L, G, V) ->
-    Count = list_to_integer(V),
-    ScopeCTX = {G#group.name, Count},
-    C4N = G#group.composite4name,
-    MC = G#group.mandatoryComposites,
-    start_classify_scope(L, {group, ScopeCTX, C4N, MC}).
-
 finish_classify_scope(L, {Scope, _C4N}, MandatoryLeft, Acc) ->
     case maps:size(MandatoryLeft) of
         0 ->
@@ -278,30 +271,42 @@ finish_classify_scope(L, {Scope, _C4N}, MandatoryLeft, Acc) ->
             {error, Reason}
     end.
 
+classify_item([{F, V, _Size} | T], C, Acc0) when element(1, C) =:= field ->
+    Acc1 = [{field, F, V} | Acc0],
+    {ok, T, Acc1};
+classify_item([{_F, V, _Size} | T], C, Acc0) when element(1, C) =:= group ->
+    Count = list_to_integer(V),
+    ScopeCTX = {C#group.name, Count},
+    C4F = C#group.composite4field,
+    MC = C#group.mandatoryComposites,
+    case start_classify_scope(T, {group, ScopeCTX, C4F, MC}) of
+        {ok, AccG, L1} -> {ok, L1, lists:reverse(AccG) ++ Acc0};
+        _OtherResult -> _OtherResult
+    end.
+
+
 classify_scope([], Current, MandatoryLeft, Acc) ->
     finish_classify_scope([], Current, MandatoryLeft, Acc);
-classify_scope([H | T] = L, {_Scope, C4N} = Current, MandatoryLeft, Acc) ->
+classify_scope([H | _T] = L, {_Scope, C4F} = Current, MandatoryLeft, Acc) ->
     %?DEBUG(H),
-    {F, V, _Size} = H,
+    F = element(1, H),
     %?DEBUG(F),
-    %?DEBUG(F#field.name),
-    case maps:find(F#field.name, C4N) of
-        {ok, F} ->
-            MandatoryLeft2 = maps:remove(F#field.name, MandatoryLeft),
-            classify_scope(T, Current, MandatoryLeft2, [{field, F, V} | Acc]);
-        {ok, G} when element(1, G) =:= group ->
-            MandatoryLeft2 = maps:remove(G#group.name, MandatoryLeft),
-            case classify_group(T, G, V) of
-                {ok, AccG, L2} ->
-                    Acc2 = lists:reverse(AccG) ++ Acc,
-                    classify_scope(L2, Current, MandatoryLeft2, Acc2);
+    % ?DEBUG(F#field.name),
+    case maps:find(F, C4F) of
+        {ok, C} ->
+            C_name = erlyfix_composite:name(C),
+            % ?DEBUG(C_name),
+            % ?DEBUG(element(1, C)),
+            MandatoryLeft1 = maps:remove(C_name, MandatoryLeft),
+            case classify_item(L, C, Acc) of
+                {ok, L1, Acc1} -> classify_scope(L1, Current, MandatoryLeft1, Acc1);
                 _OtherResult -> _OtherResult
             end;
         error -> finish_classify_scope(L, Current, MandatoryLeft, Acc)
     end.
-start_classify_scope(List, {Scope, ScopeCTX, C4N, MC}) ->
+start_classify_scope(List, {Scope, ScopeCTX, C4F, MC}) ->
     % ?DEBUG(["Start "] ++ [atom_to_list(Scope)]),
-    classify_scope(List, {Scope, C4N}, MC, [{start, Scope, ScopeCTX}]).
+    classify_scope(List, {Scope, C4F}, MC, [{start, Scope, ScopeCTX}]).
 
 
 classify([], _Candidates, Acc) ->
@@ -321,6 +326,16 @@ classify(L, [Scope | ScopeTail], Acc) ->
         _OtherResult -> _OtherResult
     end.
 
+classify_message(M, P, L) ->
+    H = P#protocol.header,
+    T = P#protocol.trailer,
+    Scopes = [
+        {header, {}, H#header.composite4field, H#header.mandatoryComposites},
+        {body, {}, M#message.composite4field, M#message.mandatoryComposites},
+        {trailer, {}, T#trailer.composite4field, T#trailer.mandatoryComposites}
+    ],
+    classify(L, Scopes, []).
+
 parse(Data, P) ->
     case parse_managed_fields(Data, P) of
         {ok, Acc, RestOfBody} ->
@@ -329,17 +344,10 @@ parse(Data, P) ->
             Acc1 = [TagMessageType | Acc0],
             case parse_tags(RestOfBody, P, Acc1) of
                 {ok, Acc2} ->
-                    %?DEBUG(Acc2),
+                    % ?DEBUG(TagChecksum),
                     % reconstruct original tags sequence
                     Acc3 = lists:reverse([TagChecksum | Acc2]),
-                    H = P#protocol.header,
-                    T = P#protocol.trailer,
-                    Scopes = [
-                        {header, {}, H#header.composite4name, H#header.mandatoryComposites},
-                        {body, {}, Message#message.composite4name, Message#message.mandatoryComposites},
-                        {trailer, {}, T#trailer.composite4name, T#trailer.mandatoryComposites}
-                    ],
-                    case classify(Acc3, Scopes, []) of
+                    case classify_message(Message, P, Acc3) of
                         {ok, Acc4} -> {ok, Message#message.name, Acc4, RestData};
                         _OtherResult -> _OtherResult
                     end;

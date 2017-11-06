@@ -47,6 +47,7 @@ protocol_load_test() ->
     % component with group
     {ok, C_Stipulations} = erlyfix_protocol:lookup(P, {component, 'Stipulations' }),
     {ok, G_NoStipulations} = maps:find('NoStipulations', C_Stipulations#component.composite4name),
+    {ok, F_NoStipulations} = erlyfix_protocol:lookup(P, {field, by_name, 'NoStipulations'}),
     ?assertEqual(error, maps:find('NoStipulations', C_Stipulations#component.mandatoryComposites)),
     ?assertEqual('NoStipulations', G_NoStipulations#group.name),
     {ok, F_StipulationType} = maps:find('StipulationType', G_NoStipulations#group.composite4name),
