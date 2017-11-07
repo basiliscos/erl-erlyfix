@@ -15,7 +15,7 @@ pull_tagno({List, Size}) ->
                 {match, [{0, TagNoSize}]} ->
                     {ok, list_to_integer(TagNoList), TagNoSize, {Rest, Size-(TagNoSize+1) }};
                 _SomethingElse ->
-                    Err = io_lib:format("Tag '~s' is not a number", [TagNoList]),
+                    Err = io_lib:format("Tag '~w' is not a number", [TagNoList]),
                     Reason = erlang:iolist_to_binary(Err),
                     {error, Reason}
             end;
@@ -280,10 +280,17 @@ classify_item([{_F, V, _Size} | T], C, Acc0) when element(1, C) =:= group ->
     C4F = C#group.composite4field,
     MC = C#group.mandatoryComposites,
     case start_classify_scope(T, {group, ScopeCTX, C4F, MC}) of
-        {ok, AccG, L1} -> {ok, L1, lists:reverse(AccG) ++ Acc0};
+        {ok, Acc1, L1} -> {ok, L1, lists:reverse(Acc1) ++ Acc0};
+        _OtherResult -> _OtherResult
+    end;
+classify_item(L, C, Acc0) when element(1, C) =:= component ->
+    C4F = C#component.composite4field,
+    MC = C#component.mandatoryComposites,
+    ScopeCTX = {C#component.name},
+    case start_classify_scope(L, {component, ScopeCTX, C4F, MC}) of
+        {ok, Acc1, L1} -> {ok, L1, lists:reverse(Acc1) ++ Acc0};
         _OtherResult -> _OtherResult
     end.
-
 
 classify_scope([], Current, MandatoryLeft, Acc) ->
     finish_classify_scope([], Current, MandatoryLeft, Acc);
@@ -295,8 +302,8 @@ classify_scope([H | _T] = L, {_Scope, C4F} = Current, MandatoryLeft, Acc) ->
     case maps:find(F, C4F) of
         {ok, C} ->
             C_name = erlyfix_composite:name(C),
-            % ?DEBUG(C_name),
             % ?DEBUG(element(1, C)),
+            % ?DEBUG(C_name),
             MandatoryLeft1 = maps:remove(C_name, MandatoryLeft),
             case classify_item(L, C, Acc) of
                 {ok, L1, Acc1} -> classify_scope(L1, Current, MandatoryLeft1, Acc1);
@@ -344,7 +351,7 @@ parse(Data, P) ->
             Acc1 = [TagMessageType | Acc0],
             case parse_tags(RestOfBody, P, Acc1) of
                 {ok, Acc2} ->
-                    % ?DEBUG(TagChecksum),
+                    %?DEBUG(TagChecksum),
                     % reconstruct original tags sequence
                     Acc3 = lists:reverse([TagChecksum | Acc2]),
                     case classify_message(Message, P, Acc3) of

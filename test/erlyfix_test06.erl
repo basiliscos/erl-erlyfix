@@ -9,7 +9,7 @@ load() ->
     Path = DirName ++ "FIX44.xml",
     erlyfix_protocol:load(Path).
 
-regular_message_parse_test() ->
+message_with_data_parse_test() ->
     P = load(),
     M = <<"8=FIX.4.4", 1, "9=102", 1, "35=A", 1,
         "212=1", 1, "213=", 1, 1,
@@ -19,7 +19,7 @@ regular_message_parse_test() ->
     >>,
     IOList = binary_to_list(M),
     Size = length(IOList),
-    ?DEBUG(erlyfix_parser:parse({IOList, Size}, P)),
+    % ?DEBUG(erlyfix_parser:parse({IOList, Size}, P)),
     {ok, 'Logon', TagsMarkup, {"", 0}} = erlyfix_parser:parse({IOList, Size}, P),
     GetField = fun(Name) ->
         {ok, F} = erlyfix_protocol:lookup(P, {field, by_name, Name}),
@@ -51,7 +51,6 @@ regular_message_parse_test() ->
             {field, GetField('CheckSum'), 232},
         {finish,trailer}
     ],
-    ?DEBUG(Markup_Expected),
-    ?DEBUG(TagsMarkup),
+    % ?DEBUG(Markup_Expected),
+    % ?DEBUG(TagsMarkup),
     ?assertEqual(Markup_Expected, TagsMarkup).
-

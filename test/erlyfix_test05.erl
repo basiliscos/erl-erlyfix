@@ -47,7 +47,7 @@ regular_message_parse_test() ->
             {field, GetField('CheckSum'), 229},
         {finish,trailer}
     ],
-    ?DEBUG(Markup_Expected),
-    ?DEBUG(TagsMarkup),
+    % ?DEBUG(Markup_Expected),
+    % ?DEBUG(TagsMarkup),
     ?assertEqual(Markup_Expected, TagsMarkup).
 
