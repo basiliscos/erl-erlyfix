@@ -376,10 +376,16 @@ serialize_group_item(AccContainer, {P, N, C4N, MC}, [H | T]) ->
 serialize_group(AccContainer, {P, N, C4N, MC}, H) ->
     Items = erlang:element(2, H),
     L = length(Items),
-    F = maps:get(N, P#protocol.field4name),
-    case erlyfix_fields:serialize_field(AccContainer, F, raw, L) of
-        {ok, NewAccContainer} -> serialize_group_item(NewAccContainer, {P, N, C4N, MC}, Items);
-        {error, Reason} -> {error, Reason}
+    case L > 0 of
+        true ->
+            F = maps:get(N, P#protocol.field4name),
+            case erlyfix_fields:serialize_field(AccContainer, F, raw, L) of
+                {ok, NewAccContainer} -> serialize_group_item(NewAccContainer, {P, N, C4N, MC}, Items);
+                {error, Reason} -> {error, Reason}
+            end;
+        false ->
+            % silently omit empty group
+            {ok, AccContainer}
     end.
 
 % serialize composite
@@ -410,8 +416,8 @@ serialize_composite(AccContainer, {P, N, C4N, MC}, [H | T]) ->
                     serialize_composite({NewSize, NewAcc}, {P, N, C4N, NewMandatoryComposites}, T);
                 {error, Reason} -> {error, Reason}
             end;
-        {error} ->
-            Err = iolib:format("'~w' is not available for '~w'", [Name, N]),
+        error ->
+            Err = io_lib:format("'~s' is not available for '~s'", [Name, N]),
             {error, erlang:iolist_to_binary(Err) }
     end.
 
@@ -488,7 +494,7 @@ serialize(Protocol, MessageName, MessageFields) ->
     case maps:find(MessageName, Protocol#protocol.message4name) of
         {ok, Message} -> serialize_message(Protocol, Message, MessageFields);
         error ->
-            Err = iolib:format("Message 'MessageName' not found", [MessageName]),
+            Err = io_lib:format("Message '~s' not found", [MessageName]),
             Reason = erlang:iolist_to_binary(Err),
             {error, Reason}
     end.

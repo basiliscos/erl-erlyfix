@@ -48,6 +48,40 @@ serialization_Wrong_Value_For_Field_test() ->
     ]),
     ?assertEqual(<<"Description 'WRONG' is not available for field 'EncryptMethod'">>, Reason).
 
+serialization_Wrong_message_test() ->
+    P = load(),
+    {error, Reason} = erlyfix_protocol:serialize(P, 'zzz', []),
+    ?assertEqual(<<"Message 'zzz' not found">>, Reason).
+
+serialization_wrong_component_test() ->
+    P = load(),
+    {error, Reason} = erlyfix_protocol:serialize(P, 'Logon', [
+        {'SenderCompID', <<"me">>},
+        {'TargetCompID', <<"you">>},
+        {'MsgSeqNum', 1},
+        {'SendingTime', <<"20090107-18:15:16">>},
+        {'EncryptMethod', <<"NONE">>},
+        {'HeartBtInt', 60},
+        {'Instrument', [{'Symbol', 'USDJPY'}] }
+    ]),
+    ?assertEqual(<<"'Instrument' is not available for 'Logon'">>, Reason).
+
+serialization_group_with_wrong_field_test() ->
+    P = load(),
+    {error, Reason} = erlyfix_protocol:serialize(P, 'Logon', [
+        {'SenderCompID', <<"me">>},
+        {'TargetCompID', <<"you">>},
+        {'MsgSeqNum', 1},
+        {'SendingTime', <<"20090107-18:15:16">>},
+        {'EncryptMethod', <<"NONE">>},
+        {'HeartBtInt', 60},
+        {'NoMsgTypes', [
+            [{'HeartBtInt', 60}]
+        ]}
+    ]),
+    ?assertEqual(<<"'HeartBtInt' is not available for 'NoMsgTypes'">>, Reason).
+
+
 serialization_Logon_test() ->
     P = load(),
     {ok, IoList} = erlyfix_protocol:serialize(P, 'Logon', [
@@ -85,6 +119,23 @@ serialization_Logon_with_group_test() ->
     >>,
     ?assertEqual(M_expected, M).
 
+serialization_empty_group_test() ->
+    P = load(),
+    {ok, IoList} = erlyfix_protocol:serialize(P, 'Logon', [
+        {'SenderCompID', <<"me">>},
+        {'TargetCompID', <<"you">>},
+        {'MsgSeqNum', 1},
+        {'SendingTime', '20090107-18:15:16'},
+        {'EncryptMethod', <<"NONE">>},
+        {'HeartBtInt', 60},
+        {'NoMsgTypes', []}
+    ]),
+    M = iolist_to_binary(IoList),
+    M_expected = <<"8=FIX.4.4", 1, "9=56", 1, "35=A", 1, "49=me", 1, "56=you", 1,
+        "34=1", 1, "52=20090107-18:15:16", 1, "98=0", 1, "108=60", 1, "10=110", 1
+    >>,
+    ?assertEqual(M_expected, M).
+
 serialization_Advertisement_with_component_test() ->
     P = load(),
     {ok, IoList} = erlyfix_protocol:serialize(P, 'Advertisement', [
@@ -108,3 +159,4 @@ serialization_Advertisement_with_component_test() ->
     %?debugFmt("Message(r2) == ~w", [M]),
     %?debugFmt("Message(e2) == ~w", [M_expected]),
     ?assertEqual(M_expected, M).
+
