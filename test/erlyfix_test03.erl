@@ -49,6 +49,7 @@ fields_test() ->
     {ok, F_SecureData} = erlyfix_protocol:lookup(P, {field, by_name, 'SecureData' }),
     ok = erlyfix_fields:validate(as_list(<<"5555">>), F_SecureData),
     ok = erlyfix_fields:validate(as_list(<<1, "5555", 1>>), F_SecureData),
+    "zzz" = erlyfix_fields:convert("zzz", F_SecureData),
 
     % FLOAT
     {ok, F_ContAmtValue} = erlyfix_protocol:lookup(P, {field, by_name, 'ContAmtValue' }),
@@ -77,6 +78,7 @@ fields_test() ->
     ok = erlyfix_fields:validate(as_list(<<"USD">>), F_ContAmtCurr),
     error = erlyfix_fields:validate(as_list(<<"USDJPY">>), F_ContAmtCurr),
     error = erlyfix_fields:validate(as_list(<<"">>), F_ContAmtCurr),
+    "USD" = erlyfix_fields:convert("USD", F_ContAmtCurr),
 
     % BOOLEAN
     {ok, F_PossDupFlag} = erlyfix_protocol:lookup(P, {field, by_name, 'PossDupFlag' }),
@@ -92,6 +94,7 @@ fields_test() ->
     {ok, F_Country} = erlyfix_protocol:lookup(P, {field, by_name, 'Country' }),
     ok = erlyfix_fields:validate(as_list(<<"BY">>), F_Country),
     error = erlyfix_fields:validate(as_list(<<"BYN">>), F_Country),
+    "BY" = erlyfix_fields:convert("BY", F_Country),
 
     % UTCTIMEONLY
     {ok, F_MDEntryTime} = erlyfix_protocol:lookup(P, {field, by_name, 'MDEntryTime' }),
@@ -118,6 +121,7 @@ fields_test() ->
     ok = erlyfix_fields:validate(as_list(<<"199812w5">>), F_MaturityMonthYear),
     error = erlyfix_fields:validate(as_list(<<"19981232">>), F_MaturityMonthYear),
     error = erlyfix_fields:validate(as_list(<<"199812w7">>), F_MaturityMonthYear),
+    error = erlyfix_fields:validate(as_list(<<"garbage">>), F_MaturityMonthYear),
     ?assertEqual(
         #monthyear_week{ year = 1998, month = 12, week = 0 },
         erlyfix_fields:convert("199812", F_MaturityMonthYear)
@@ -147,6 +151,7 @@ fields_test() ->
     ok = erlyfix_fields:validate(as_list(<<"19981231-23:59:59.123">>), F_LastUpdateTime),
     error = erlyfix_fields:validate(as_list(<<"1998123123:59:59.123">>), F_LastUpdateTime),
     error = erlyfix_fields:validate(as_list(<<"1998123123:59:59.1231">>), F_LastUpdateTime),
+    error = erlyfix_fields:validate(as_list(<<"garbage">>), F_LastUpdateTime),
     ?assertEqual(
         #utc_timestamp {
             date = #fix_date { year = 1998, month = 12, day = 31 },
