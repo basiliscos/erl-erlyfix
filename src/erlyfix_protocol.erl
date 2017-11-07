@@ -341,9 +341,8 @@ load(Path) ->
         {ok, Bin} ->
           {ok, Map, _} = erlsom:parse_sax(Bin, #{}, fun callback/2),
           Protocol = construct(Map),
-          Protocol;
-          %Map;
-        Error -> Error
+          {ok, Protocol};
+        {error, Reason}  -> {error, Reason}
     end.
 
 version(Protocol)-> Protocol#protocol.protocol_version.

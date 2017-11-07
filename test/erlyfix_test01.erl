@@ -2,10 +2,15 @@
 -include_lib("eunit/include/eunit.hrl").
 -include("erlyfix_records.hrl").
 
+load_test() ->
+    {error, Err} = erlyfix_protocol:load("..."),
+    ?assertEqual(enoent, Err).
+
 load() ->
     DirName = "priv/protocols/",
     Path = DirName ++ "FIX44.xml",
-    erlyfix_protocol:load(Path).
+    {ok, P} = erlyfix_protocol:load(Path),
+    P.
 
 
 protocol_load_test() ->
@@ -47,7 +52,7 @@ protocol_load_test() ->
     % component with group
     {ok, C_Stipulations} = erlyfix_protocol:lookup(P, {component, 'Stipulations' }),
     {ok, G_NoStipulations} = maps:find('NoStipulations', C_Stipulations#component.composite4name),
-    {ok, F_NoStipulations} = erlyfix_protocol:lookup(P, {field, by_name, 'NoStipulations'}),
+    {ok, _F_NoStipulations} = erlyfix_protocol:lookup(P, {field, by_name, 'NoStipulations'}),
     ?assertEqual(error, maps:find('NoStipulations', C_Stipulations#component.mandatoryComposites)),
     ?assertEqual('NoStipulations', G_NoStipulations#group.name),
     {ok, F_StipulationType} = maps:find('StipulationType', G_NoStipulations#group.composite4name),

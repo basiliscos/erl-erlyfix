@@ -7,7 +7,8 @@
 load() ->
     DirName = "priv/protocols/",
     Path = DirName ++ "FIX44.xml",
-    erlyfix_protocol:load(Path).
+    {ok, P} = erlyfix_protocol:load(Path),
+    P.
 
 regular_message_parse_test() ->
     P = load(),

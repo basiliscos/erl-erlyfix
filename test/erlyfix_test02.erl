@@ -5,7 +5,8 @@
 load() ->
     DirName = "priv/protocols/",
     Path = DirName ++ "FIX44.xml",
-    erlyfix_protocol:load(Path).
+    {ok, P} = erlyfix_protocol:load(Path),
+    P.
 
 serialization_Logon_Missing_Header_Field_test() ->
     P = load(),

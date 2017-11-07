@@ -6,7 +6,8 @@
 load() ->
     DirName = "priv/protocols/",
     Path = DirName ++ "FIX44.xml",
-    erlyfix_protocol:load(Path).
+    {ok, P} = erlyfix_protocol:load(Path),
+    P.
 
 as_list(B) ->
     L = binary_to_list(B),
