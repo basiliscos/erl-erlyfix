@@ -199,16 +199,16 @@ uplift_non_field(Composite, C4F, UpperC4F) ->
 
 uplift_list([], _F4Name, C4Field) -> C4Field;
 uplift_list([H | T], F4Name, C4Field) ->
-    %?DEBUG([H | T]),
-    case erlyfix_composite:decompose(H) of
-        {field, F} -> uplift_list(T, F4Name, C4Field#{F => F});
-        {group, _Name, _C4N, _MC} ->
+    % ?DEBUG(element(1, H)),
+    case element(1, H) of
+        field -> uplift_list(T, F4Name, C4Field#{H => H});
+        group ->
             C4F1 = uplift_non_field(H, H#group.composite4field, C4Field),
             % "main" field, pointing to group count and group type
             {ok, F} = maps:find(H#group.name, F4Name),
             C4F2 = C4F1#{ F => H},
             uplift_list(T, F4Name, C4F2);
-        {composite, _Name, _C4N, _MC} ->
+        component ->
             C4F1 = uplift_non_field(H, H#component.composite4field,  C4Field),
             uplift_list(T, F4Name, C4F1)
     end.
@@ -403,10 +403,20 @@ serialize_composite(AccContainer, {P, N, C4N, MC}, [H | T]) ->
     case maps:find(Name, C4N) of
         {ok, Composite} ->
             % serialize head (subcomposite)
-            R = case erlyfix_composite:decompose(Composite) of
-                {composite, S_N, S_C4N, S_MC} -> serialize_composite(AccContainer, {P, S_N, S_C4N, S_MC}, erlang:element(2, H));
-                {group, S_N, S_C4N, S_MC} -> serialize_group(AccContainer, {P, S_N, S_C4N, S_MC}, H);
-                {field, F} -> erlyfix_fields:serialize_field(AccContainer, F, erlang:element(2, H))
+            R = case erlang:element(1, Composite) of
+                component ->
+                    Payload = {P, Composite#component.name,
+                        Composite#component.composite4name,
+                        Composite#component.mandatoryComposites
+                    },
+                    serialize_composite(AccContainer, Payload, erlang:element(2, H));
+                group ->
+                    Payload = {P, Composite#group.name,
+                        Composite#group.composite4name,
+                        Composite#group.mandatoryComposites
+                    },
+                    serialize_group(AccContainer, Payload, H);
+                field -> erlyfix_fields:serialize_field(AccContainer, Composite, erlang:element(2, H))
             end,
             % ?DEBUG(R),
             case R of
