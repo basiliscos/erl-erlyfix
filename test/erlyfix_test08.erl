@@ -85,4 +85,9 @@ parsing_error_test() ->
     {error, R17} = erlyfix_parser:parse(as_list(
         "8=FIX.4.4" ++ [1] ++ "9=7" ++ [1] ++ "xx=ZZZ" ++ [1] ++ "10=011" ++ [1]), P),
     % ?debugFmt("~p", [R17]),
-    ?assertEqual(<<"Tag '[120,120]' is not a number">>, R17).
+    ?assertEqual(<<"Tag '[120,120]' is not a number">>, R17),
+
+    {error, R18} = erlyfix_parser:parse(as_list(
+        "8=FIX.4.4" ++ [1] ++ "9=14" ++ [1] ++ "35=0" ++ [1] ++
+        "112=Test" ++ [1] ++ "10=069" ++ [1]), P),
+    ?assertEqual(<<"Missing mandatory 'MsgSeqNum' for 'header'">>, R18).

@@ -288,31 +288,23 @@ classify_item([{_F, V, _Size} | T], C, Acc0) when element(1, C) =:= group ->
     ScopeCTX = {C#group.name, Count},
     C4F = C#group.composite4field,
     MC = C#group.mandatoryComposites,
-    case start_classify_scope(T, {group, ScopeCTX, C4F, MC}) of
-        {ok, Acc1, L1} -> {ok, L1, lists:reverse(Acc1) ++ Acc0};
-        _OtherResult -> _OtherResult
-    end;
+    % should fail, as C4F on top level all possibilitites
+    {ok, Acc1, L1} = start_classify_scope(T, {group, ScopeCTX, C4F, MC}),
+    {ok, L1, lists:reverse(Acc1) ++ Acc0};
 classify_item(L, C, Acc0) when element(1, C) =:= component ->
     C4F = C#component.composite4field,
     MC = C#component.mandatoryComposites,
     ScopeCTX = {C#component.name},
-    case start_classify_scope(L, {component, ScopeCTX, C4F, MC}) of
-        {ok, Acc1, L1} -> {ok, L1, lists:reverse(Acc1) ++ Acc0};
-        _OtherResult -> _OtherResult
-    end.
+    {ok, Acc1, L1} = start_classify_scope(L, {component, ScopeCTX, C4F, MC}),
+    {ok, L1, lists:reverse(Acc1) ++ Acc0}.
 
 classify_scope([], Current, MandatoryLeft, Acc) ->
     finish_classify_scope([], Current, MandatoryLeft, Acc);
 classify_scope([H | _T] = L, {_Scope, C4F} = Current, MandatoryLeft, Acc) ->
-    %?DEBUG(H),
     F = element(1, H),
-    %?DEBUG(F),
-    % ?DEBUG(F#field.name),
     case maps:find(F, C4F) of
         {ok, C} ->
             C_name = erlyfix_composite:name(C),
-            % ?DEBUG(element(1, C)),
-            % ?DEBUG(C_name),
             MandatoryLeft1 = maps:remove(C_name, MandatoryLeft),
             case classify_item(L, C, Acc) of
                 {ok, L1, Acc1} -> classify_scope(L1, Current, MandatoryLeft1, Acc1);
@@ -321,7 +313,6 @@ classify_scope([H | _T] = L, {_Scope, C4F} = Current, MandatoryLeft, Acc) ->
         error -> finish_classify_scope(L, Current, MandatoryLeft, Acc)
     end.
 start_classify_scope(List, {Scope, ScopeCTX, C4F, MC}) ->
-    % ?DEBUG(["Start "] ++ [atom_to_list(Scope)]),
     classify_scope(List, {Scope, C4F}, MC, [{start, Scope, ScopeCTX}]).
 
 
@@ -329,11 +320,11 @@ classify([], _Candidates, Acc) ->
     Acc1 = lists:reverse(Acc),
     Acc2 = lists:flatten(Acc1),
     {ok, Acc2};
-classify([H | _T], [], _Acc) ->
-    {F, _V} = H,
-    Err = io_lib:format("Unknown filed '~s'", [F#field.name]),
-    Reason = erlang:iolist_to_binary(Err),
-    {error, Reason};
+% classify([H | _T], [], _Acc) - is never called. If we have "unexpected"
+% field, we stop processing current scope with the assumption that the field
+% will be handled by the next scope. But as component has mandatory field
+% it will fail to construct current scope; that's at least true for "trailer"
+% and checksum field
 classify(L, [Scope | ScopeTail], Acc) ->
     case start_classify_scope(L, Scope) of
         {ok, InnerAcc, L1} ->
@@ -360,7 +351,7 @@ parse(Data, P) ->
             Acc1 = [TagMessageType | Acc0],
             case parse_tags(RestOfBody, P, Acc1) of
                 {ok, Acc2} ->
-                    %?DEBUG(TagChecksum),
+                    % ?DEBUG(TagChecksum),
                     % reconstruct original tags sequence
                     Acc3 = lists:reverse([TagChecksum | Acc2]),
                     case classify_message(Message, P, Acc3) of
