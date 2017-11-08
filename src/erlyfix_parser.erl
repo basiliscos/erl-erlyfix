@@ -38,47 +38,41 @@ pull_tagvalue({List, Size}, TagValueSize) ->
             {ok, TagValue, TagValueSize, {Rest1, Size - (TagValueSize + 1)}}
     end.
 
-parse_tagvalue(Data, F) ->
+parse_tagvalue(Data, F, ValueSize) ->
     N = F#field.number,
     case pull_tagno(Data) of
         {ok, N, TagNoSize, Rest0} ->
-            case pull_tagvalue(Rest0, any_size) of
+            case pull_tagvalue(Rest0, ValueSize) of
                 {ok, TagValue, TagValueSize, Rest1} ->
                     case erlyfix_fields:validate({TagValue, TagValueSize}, F) of
                         ok    -> {ok, TagValue, TagNoSize + TagValueSize + 1, Rest1};
                         error ->
-                            Err = io_lib:format("Value '~s' does pass validatation for field '~s'",
-                                [TagValue, F#field.name]),
+                            Err = io_lib:format("Value '~w' does pass validatation for field ~B ('~s')",
+                                [TagValue, N, F#field.name]),
                             Reason = erlang:iolist_to_binary(Err),
                             {error, Reason}
                     end;
                 SomethingElse -> SomethingElse
             end;
         {ok, K, _TagNoSize, _Rest} ->
-            Err = io_lib:format("Tag mismatch. Expected: '~w', got '~w'", [N, K]),
+            Err = io_lib:format("Tag mismatch. Expected: '~w' (~s), got '~w'", [N, F#field.name, K]),
             Reason = erlang:iolist_to_binary(Err),
             {error, Reason};
         SomethingElse -> SomethingElse
     end.
 
-tagvalue_size(F, Acc) ->
+tagvalue_size(F, [H | _T]) ->
     case F#field.type of
         'DATA' ->
-            case Acc of
-                [H | _T] ->
-                    {F_prev, Value_prev, _TagSize} = H,
-                    case F_prev#field.type of
-                        'LENGTH' ->
-                            DataSize = erlyfix_fields:convert(Value_prev, F_prev),
-                            {ok, DataSize};
-                        _OtherType ->
-                            Err = io_lib:format("Expected that 'LENGTH' tag should precede the"
-                                ++ " current 'DATA', meanwhile got '~w'", [F_prev#field.type]),
-                            Reason = erlang:iolist_to_binary(Err),
-                            {error, Reason}
-                    end;
-                _Empty ->
-                    Err = io_lib:format("Current 'DATA' tag is not preceded with 'LENGTH' tag"),
+            {F_prev, Value_prev, _TagSize} = H,
+            case F_prev#field.type of
+                'LENGTH' ->
+                    DataSize = erlyfix_fields:convert(Value_prev, F_prev),
+                    {ok, DataSize};
+                _OtherType ->
+                    Err = io_lib:format("Expected that type 'LENGTH' tag should precede the"
+                        ++ " current 'DATA' field type, meanwhile got field ~B ('~s') of type '~s'", [
+                        F_prev#field.number, F_prev#field.name, F_prev#field.type]),
                     Reason = erlang:iolist_to_binary(Err),
                     {error, Reason}
             end;
@@ -103,7 +97,12 @@ parse_tagpair(Data, P, Acc) ->
                                             Reason = erlang:iolist_to_binary(Err),
                                             {error, Reason}
                                     end;
-                                SomethingElse -> SomethingElse
+                                not_found ->
+                                    % this can actually happen if LENGTH is greater then DATA
+                                    Err = io_lib:format("Canot extract tag value for field ~B (~w)", [
+                                        F#field.number, F#field.name]),
+                                    Reason = erlang:iolist_to_binary(Err),
+                                    {error, Reason}
                             end;
                         SomethingElse -> SomethingElse
                     end;
@@ -115,23 +114,23 @@ parse_tagpair(Data, P, Acc) ->
         SomethingElse -> SomethingElse
     end.
 
-parse_introduction(Data, #context{protocol = P, data = _D}, Acc)->
+parse_introduction({L, DataSize} = Data , #context{protocol = P, data = _D}, Acc)->
     {ok, F} = erlyfix_protocol:lookup(P, {field, by_name, 'BeginString' }),
     Major = P#protocol.protocol_version#protocol_version.major,
     Minor = P#protocol.protocol_version#protocol_version.minor,
     BeginString = lists:flatten(io_lib:format("FIX.~B.~B", [Major, Minor])),
 
-    case parse_tagvalue(Data, F) of
+    case parse_tagvalue(Data, F, any_size) of
         {error, Reason} -> {error, Reason};
         not_found ->
             LengthMin = byte_size(integer_to_binary(F#field.number))
                 + 1 % '=' aka separator
-                + byte_size(BeginString),
+                + length(BeginString),
             % ?DEBUG(Data),
-            case byte_size(Data) >= LengthMin of
+            case DataSize >= LengthMin of
                 false -> no_enough_data;
                 true ->
-                    Err = io_lib:format("Sequence '~s' does not FIX header", [Data]),
+                    Err = io_lib:format("FIX header has not been found in sequence '~w'", [L]),
                     Reason = erlang:iolist_to_binary(Err),
                     {error, Reason}
             end;
@@ -149,7 +148,7 @@ parse_introduction(Data, #context{protocol = P, data = _D}, Acc)->
 
 parse_length(Data, #context{protocol = P, data = _D}, Acc) ->
     {ok, F} = erlyfix_protocol:lookup(P, {field, by_name, 'BodyLength' }),
-    case parse_tagvalue(Data, F) of
+    case parse_tagvalue(Data, F, any_size) of
         {error, Reason} -> {error, Reason};
         not_found -> no_enough_data;
         {ok, BinaryValue, Size, Rest} ->
@@ -169,27 +168,38 @@ extract_checksum({List, Size}, #context{protocol = P, data = _D}, Acc) ->
     [{_F_length, BodyLength, _F_Lengt_Size} | _T] = Acc,
     {ok, F} = erlyfix_protocol:lookup(P, {field, by_name, 'CheckSum' }),
     TagLength = iolist_size(io_lib:format(<<"~B=xxx", 1>>, [F#field.number])),
-    {Body, Tail} = lists:split(BodyLength, List),
-    {TagData, NextMessage} = lists:split(TagLength, Tail),
-    case parse_tagvalue({TagData, TagLength}, F) of
-        {error, Reason} -> {error, Reason};
-        not_found ->
-            Err = io_lib:format("Checksum tag not found in '~s'", [TagData]),
-            Reason = erlang:iolist_to_binary(Err),
-            {error, Reason};
-        {ok, Value, _TagLength, _Rest} ->
-            case re:run(Value, <<"\\d{3}">>) of
-                {match,[{0,3}]} ->
-                    Checksum = list_to_integer(Value),
-                    BytesLeft = Size - (BodyLength + TagLength),
-                    MessageBody = {Body, BodyLength},
-                    {ok, [{F, Checksum, TagLength}, {next_message, {NextMessage, BytesLeft}} | Acc], MessageBody};
-                _SomethingElse ->
-                    Err = io_lib:format("Checksum format mismatch: '~s' ",[Value]),
+    case Size >= BodyLength + TagLength  of
+        true ->
+            {Body, Tail} = lists:split(BodyLength, List),
+            {TagData, NextMessage} = lists:split(TagLength, Tail),
+            % checksum is exactly 3 digits
+            case parse_tagvalue({TagData, TagLength}, F, 3) of
+                {error, Reason} -> {error, Reason};
+                not_found ->
+                    Err = io_lib:format("Checksum tag (~B) not found in sequence '~w'",
+                        [F#field.number, TagData]),
                     Reason = erlang:iolist_to_binary(Err),
-                    {error, Reason}
-            end
+                    {error, Reason};
+                {ok, Value, _TagLength, _Rest} ->
+                    case re:run(Value, <<"\\d{3}">>) of
+                        {match,[{0,3}]} ->
+                            Checksum = list_to_integer(Value),
+                            BytesLeft = Size - (BodyLength + TagLength),
+                            MessageBody = {Body, BodyLength},
+                            Acc1 = [
+                                {F, Checksum, TagLength},
+                                {next_message, {NextMessage, BytesLeft}} | Acc
+                            ],
+                            {ok, Acc1, MessageBody};
+                        _SomethingElse ->
+                            Err = io_lib:format("Checksum format mismatch: '~w' is not 3-digit string",[Value]),
+                            Reason = erlang:iolist_to_binary(Err),
+                            {error, Reason}
+                    end
+            end;
+        false -> no_enough_data
     end.
+
 
 confirm_checksum(Body, #context{protocol = _P, data = {List, Size}}, Acc) ->
     [{F, Checksum, ChecksumSize} | Acc0 ] = Acc,
@@ -208,9 +218,7 @@ confirm_checksum(Body, #context{protocol = _P, data = {List, Size}}, Acc) ->
 
 extract_message_type(Body, #context{protocol = P, data = _D}, Acc) ->
     {ok, F} = erlyfix_protocol:lookup(P, {field, by_name, 'MsgType' }),
-    case parse_tagvalue(Body, F) of
-        {error, Reason} -> {error, Reason};
-        {not_found, Body} -> no_enough_data;
+    case parse_tagvalue(Body, F, any_size) of
         {ok, MsgTypeValue, TagSize, RestOfBody} ->
              try list_to_existing_atom(MsgTypeValue) of
                 MsgType ->
@@ -228,7 +236,8 @@ extract_message_type(Body, #context{protocol = P, data = _D}, Acc) ->
                     Err = io_lib:format("Unknown message type '~s'", [MsgTypeValue]),
                     Reason = erlang:iolist_to_binary(Err),
                     {error, Reason}
-            end
+            end;
+        SomethingElse -> SomethingElse
     end.
 
 
