@@ -91,3 +91,4 @@ parsing_error_test() ->
         "8=FIX.4.4" ++ [1] ++ "9=14" ++ [1] ++ "35=0" ++ [1] ++
         "112=Test" ++ [1] ++ "10=069" ++ [1]), P),
     ?assertEqual(<<"Missing mandatory 'MsgSeqNum' for 'header'">>, R18).
+

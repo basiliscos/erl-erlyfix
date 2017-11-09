@@ -121,6 +121,7 @@
     message4name        :: map(),
     message4type        :: map()
 }).
+-type protocol() :: #protocol{}.
 
 % field types
 

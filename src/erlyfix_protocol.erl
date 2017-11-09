@@ -5,6 +5,12 @@
 -define(SEPARATOR, <<1:8>>).
 -define(DEBUG(X), io:format("DEBUG ~p:~p ~p~n",[?MODULE, ?LINE, X])).
 
+-record(context, {
+    name        :: string(),
+    protocol    :: protocol(),
+    c4n         :: map()
+}).
+
 %% XML-parsing
 
 find_attr(Name, Attributes, Fn) ->
@@ -362,25 +368,29 @@ lookup(Protocol, Criterium) ->
     end.
 
 % serialize group item
-serialize_group_item(AccContainer, {P, N, C4N, MC}, []) ->
-    serialize_composite(AccContainer, {P, N, C4N, MC}, []);
-
-serialize_group_item(AccContainer, {P, N, C4N, MC}, [H | T]) ->
-    case serialize_composite(AccContainer, {P, N, C4N, MC}, H) of
-        {ok, NewAccContainer} -> serialize_group_item(NewAccContainer, {P, N, C4N, MC}, T);
+serialize_group_item(AccContainer, CTX, []) ->
+    serialize_composite(AccContainer, CTX, []);
+serialize_group_item(AccContainer, CTX, [H | T]) ->
+    case serialize_composite(AccContainer, CTX, H) of
+        {ok, NewAccContainer} -> serialize_group_item(NewAccContainer, CTX, T);
         {error, Reason} -> {error, Reason}
     end.
 
+% serialize_field
+serialize_field({Size0, Acc0, MC}, F, Type, Value) ->
+    case erlyfix_fields:serialize_field({Size0, Acc0}, F, Type, Value) of
+        {ok, {Size1, Acc1}} -> {ok, {Size1, Acc1, maps:remove(F#field.name, MC)}};
+        {error, Reason} -> {error, Reason}
+    end.
 
 % serialize group
-serialize_group(AccContainer, {P, N, C4N, MC}, H) ->
-    Items = erlang:element(2, H),
+serialize_group(AccContainer, CTX, Items) ->
     L = length(Items),
     case L > 0 of
         true ->
-            F = maps:get(N, P#protocol.field4name),
-            case erlyfix_fields:serialize_field(AccContainer, F, raw, L) of
-                {ok, NewAccContainer} -> serialize_group_item(NewAccContainer, {P, N, C4N, MC}, Items);
+            F = maps:get(CTX#context.name, CTX#context.protocol#protocol.field4name),
+            case serialize_field(AccContainer, F, unchecked, L) of
+                {ok, NewAccContainer} -> serialize_group_item(NewAccContainer, CTX, Items);
                 {error, Reason} -> {error, Reason}
             end;
         false ->
@@ -389,45 +399,49 @@ serialize_group(AccContainer, {P, N, C4N, MC}, H) ->
     end.
 
 % serialize composite
-serialize_composite(AccContainer, {_P, N, _C4N, MC},  []) ->
+serialize_composite({_Size, _Acc, MC} = AccContainer, CTX, []) ->
     case maps:size(MC) of
         0 -> {ok, AccContainer};
         _S ->
             [Name | _T ] = maps:keys(MC),
-            Err = io_lib:format("Missing mandatory '~s' for '~s'", [Name, N]),
+            Err = io_lib:format("Missing mandatory '~s' for '~s'", [Name, CTX#context.name]),
             Reason = erlang:iolist_to_binary(Err),
             {error, Reason}
     end;
-serialize_composite(AccContainer, {P, N, C4N, MC}, [H | T]) ->
+serialize_composite({Size, L, _MC} = AccContainer, CTX, [H | T]) ->
     Name = erlang:element(1, H),
-    case maps:find(Name, C4N) of
+    % ?DEBUG(Name),
+    case maps:find(Name, CTX#context.c4n) of
         {ok, Composite} ->
             % serialize head (subcomposite)
+            Payload = erlang:element(2, H),
             R = case erlang:element(1, Composite) of
                 component ->
-                    Payload = {P, Composite#component.name,
-                        Composite#component.composite4name,
-                        Composite#component.mandatoryComposites
+                    NewCTX = #context {
+                        name = Composite#component.name,
+                        protocol = CTX#context.protocol,
+                        c4n = Composite#component.composite4name
                     },
-                    serialize_composite(AccContainer, Payload, erlang:element(2, H));
+                    NewMC = Composite#component.mandatoryComposites,
+                    serialize_composite({Size, L, NewMC}, NewCTX, Payload);
                 group ->
-                    Payload = {P, Composite#group.name,
-                        Composite#group.composite4name,
-                        Composite#group.mandatoryComposites
+                    NewCTX = #context{
+                        name = Composite#group.name,
+                        protocol = CTX#context.protocol,
+                        c4n = Composite#group.composite4name
                     },
-                    serialize_group(AccContainer, Payload, H);
-                field -> erlyfix_fields:serialize_field(AccContainer, Composite, erlang:element(2, H))
+                    NewMC = Composite#group.mandatoryComposites,
+                    serialize_group({Size, L, NewMC}, NewCTX, Payload);
+                field ->
+                    serialize_field(AccContainer, Composite, checked, Payload)
             end,
-            % ?DEBUG(R),
             case R of
-                {ok, {NewSize, NewAcc}} ->
-                    NewMandatoryComposites = maps:remove(Name, MC),
-                    %?DEBUG(maps:keys(NewMandatoryComposites)),
-                    serialize_composite({NewSize, NewAcc}, {P, N, C4N, NewMandatoryComposites}, T);
+                {ok, NewAccContainer} ->
+                    serialize_composite(NewAccContainer, CTX, T);
                 {error, Reason} -> {error, Reason}
             end;
         error ->
-            Err = io_lib:format("'~s' is not available for '~s'", [Name, N]),
+            Err = io_lib:format("'~s' is not available for '~s'", [Name, CTX#context.name]),
             {error, erlang:iolist_to_binary(Err) }
     end.
 
@@ -435,7 +449,7 @@ serialize_composite(AccContainer, {P, N, C4N, MC}, [H | T]) ->
 process_pipeline(Acc, []) -> {ok, Acc};
 process_pipeline(Acc0, [H | T]) ->
     R = H(Acc0),
-    %?DEBUG(R),
+    % ?DEBUG(Acc0),
     case R of
         {ok, Acc1} -> process_pipeline(Acc1, T);
         {error, Details} -> {error, Details}
@@ -446,15 +460,12 @@ serialize_message(Protocol, Message, MessageFields) ->
     T = Protocol#protocol.trailer,
     HT_C4N = maps:merge(H#header.composite4name, T#trailer.composite4name),
     HT_MC = maps:merge(H#header.mandatoryComposites, T#trailer.mandatoryComposites),
-    N = Message#message.name,
     C4N_i = maps:merge(Message#message.composite4name, HT_C4N),
     MC_i = maps:merge(Message#message.mandatoryComposites, HT_MC),
 
     ManagedFields = ['BeginString', 'BodyLength', 'MsgType', 'CheckSum'],
     C4N = maps:without(ManagedFields, C4N_i),
-    MC = maps:without(ManagedFields, MC_i),
-
-    %?DEBUG(maps:keys(MC)),
+    MC_managed = maps:without(ManagedFields, MC_i),
 
     % managed fields
     F_Type = maps:get('MsgType', Protocol#protocol.field4name),
@@ -463,40 +474,42 @@ serialize_message(Protocol, Message, MessageFields) ->
     F_CheckSum = maps:get('CheckSum', Protocol#protocol.field4name),
 
     Fn_add_MsgType = fun(Acc0) ->
-        erlyfix_fields:serialize_field(Acc0, F_Type, raw, Message#message.type)
+        serialize_field(Acc0, F_Type, unchecked, Message#message.type)
     end,
-    Fn_serialize_body = fun(Acc0) ->
-        serialize_composite(Acc0, {Protocol, N, C4N, MC}, MessageFields)
+    CTX = #context{ name = Message#message.name, protocol = Protocol, c4n = C4N },
+    Fn_serialize_body = fun(Acc) ->
+        serialize_composite(Acc, CTX, MessageFields)
     end,
-    Fn_reverse_body = fun({Size0, List0}) -> {ok, {Size0, lists:reverse(List0)}} end,
+    Fn_reverse_body = fun({Size0, List0, MC0}) -> {ok, {Size0, lists:reverse(List0), MC0}} end,
 
-    Fn_wrap_body = fun({SizeB,  AccB}) ->
+    Fn_wrap_body = fun({SizeB,  AccB, MCB}) ->
         Fn_headers = [
-            fun(_Acc) -> erlyfix_fields:serialize_field({0, []}, F_BodyLength, SizeB) end,
+            fun(_Acc) -> serialize_field({0, [], MCB}, F_BodyLength, unchecked, SizeB) end,
             fun(Acc) ->
                 Version = Protocol#protocol.protocol_version,
                 ProtocolID = io_lib:format("FIX.~B.~B", [Version#protocol_version.major, Version#protocol_version.minor]),
-                erlyfix_fields:serialize_field(Acc, F_BeginString, ProtocolID)
+                serialize_field(Acc, F_BeginString, unchecked, ProtocolID)
             end,
-            fun({SizeH, AccH}) ->
+            fun({_SizeH, AccH, _MC} = AccContainer) ->
                 CheckSum = erlyfix_utils:checksum([AccH | AccB]),
                 PaddedCS = io_lib:format("~3..0B", [CheckSum]),
-                erlyfix_fields:serialize_field({SizeH, AccH}, F_CheckSum, PaddedCS)
+                serialize_field(AccContainer, F_CheckSum, unchecked, PaddedCS)
             end,
-            fun({SizeTH, [AccT | AccH]}) -> {ok, {SizeTH + SizeB, [ AccH, AccB, AccT]} } end
+            fun({SizeTH, [AccT | AccH], MC1}) -> {ok, {SizeTH + SizeB, [ AccH, AccB, AccT], MC1} } end
         ],
-        process_pipeline({SizeB,  AccB}, Fn_headers)
+        process_pipeline({SizeB,  AccB, MCB}, Fn_headers)
     end,
 
-    R = process_pipeline({0, []}, [
+    R = process_pipeline({0, [], MC_managed}, [
         Fn_add_MsgType,
         Fn_serialize_body,
         Fn_reverse_body,
         Fn_wrap_body
     ]),
 
+    % ?DEBUG(R),
     case R of
-        {ok, {_Size, Acc}} -> {ok, Acc};
+        {ok, {_Size, Acc, _MC2}} -> {ok, Acc};
         {error, Reason} -> {error, Reason}
     end.
 

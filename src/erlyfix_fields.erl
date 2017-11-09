@@ -2,9 +2,9 @@
 -include("erlyfix_records.hrl").
 -define(DEBUG(X), io:format("DEBUG ~p:~p ~p~n",[?MODULE, ?LINE, X])).
 
--export([serialize_field/3, serialize_field/4, validate/2, convert/2, as_label/2]).
+-export([serialize_field/4, validate/2, convert/2, as_label/2]).
 
-serialize_field({Size, Acc}, F, raw, Value) ->
+serialize_field({Size, Acc}, F, unchecked, Value) ->
     Value_Bits = if
         is_integer(Value) -> erlang:integer_to_list(Value);
         is_atom(Value)    -> erlang:atom_to_list(Value);
@@ -14,9 +14,8 @@ serialize_field({Size, Acc}, F, raw, Value) ->
     Number_Bits = erlang:integer_to_list(F#field.number),
     Bits = [Number_Bits, "=", Value_Bits, 1],
     NewSize = Size + 2 + length(Number_Bits) + length(Value_Bits),
-    {ok, {NewSize, [ Bits | Acc]} }.
-
-serialize_field({Size, Acc}, F, RawValue) ->
+    {ok, {NewSize, [ Bits | Acc]} };
+serialize_field({Size, Acc}, F, checked, RawValue) ->
     R = case maps:size(F#field.value4description) of
         0    -> {ok, RawValue};
         _Any ->
@@ -32,7 +31,7 @@ serialize_field({Size, Acc}, F, RawValue) ->
     end,
 
     case R of
-        {ok, Value} -> serialize_field({Size, Acc}, F, raw, Value);
+        {ok, Value} -> serialize_field({Size, Acc}, F, unchecked, Value);
         {error, Descr} -> {error, Descr}
     end.
 
