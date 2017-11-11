@@ -3,7 +3,7 @@
 -include("erlyfix_records.hrl").
 
 load_test() ->
-    MainPath = "priv/protocols/FIX44.xml",
+    MainPath = "test/FIX44.xml",
     Extension = "test/extension-sample.xml",
     {ok, P} = erlyfix_protocol:load(MainPath, Extension),
     {ok, F_AwesomeField} = erlyfix_protocol:lookup(P, {field, by_name, 'AwesomeField'}),

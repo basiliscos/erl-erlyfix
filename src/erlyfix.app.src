@@ -2,14 +2,13 @@
  [{description, "An OTP application"},
   {vsn, "0.1.0"},
   {registered, []},
-  {mod, { erlyfix_app, []}},
   {applications,
    [kernel,
     stdlib
    ]},
   {env,[]},
-  {modules, []},
-
+  {modules, [erlyfix_composite, erlyfix_fields,
+    erlyfix_parser, erlyfix_protocol, erlyfix_utils]},
   {maintainers, []},
   {licenses, ["Apache 2.0"]},
   {links, []}

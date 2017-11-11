@@ -7,8 +7,7 @@ load_test() ->
     ?assertEqual(enoent, Err).
 
 load() ->
-    DirName = "priv/protocols/",
-    Path = DirName ++ "FIX44.xml",
+    Path = "test/FIX44.xml",
     {ok, P} = erlyfix_protocol:load(Path),
     P.
 

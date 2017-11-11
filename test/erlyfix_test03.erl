@@ -4,8 +4,7 @@
 -define(DEBUG(X), io:format("DEBUG ~p:~p ~p~n",[?MODULE, ?LINE, X])).
 
 load() ->
-    DirName = "priv/protocols/",
-    Path = DirName ++ "FIX44.xml",
+    Path = "test/FIX44.xml",
     {ok, P} = erlyfix_protocol:load(Path),
     P.
 
