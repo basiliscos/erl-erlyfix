@@ -1,7 +1,7 @@
 -module(erlyfix_protocol).
 -include("erlyfix_records.hrl").
 
--export([load/1, version/1, lookup/2, serialize/3]).
+-export([load/1, load/2, version/1, lookup/2, serialize/3]).
 -define(SEPARATOR, <<1:8>>).
 -define(DEBUG(X), io:format("DEBUG ~p:~p ~p~n",[?MODULE, ?LINE, X])).
 
@@ -142,6 +142,24 @@ callback(Event, Acc) ->
             [ [ValueDef | H] | T ];
         _ -> Acc
     end.
+
+% merge maps
+merge_map_element(Acc, _Extension, []) -> {ok, Acc};
+merge_map_element(Acc0, Extension, [H | T]) ->
+    E_m = maps:get(H, Acc0),
+    Acc1 = case maps:find(H, Extension) of
+        {ok, E_e} -> Acc0#{ H => E_m ++ E_e };
+        error -> Acc0
+    end,
+    merge_map_element(Acc1, Extension, T).
+
+merge_maps(Main, Extension) ->
+    % check versions match
+    V_m = maps:get(version, Main),
+    V_e = maps:get(version, Extension),
+    V_m = V_e,
+    Plan = [header, trailer, messages, components, fields],
+    merge_map_element(Main, Extension, Plan).
 
 %% Constuction
 
@@ -345,11 +363,27 @@ construct(Map) ->
 load(Path) ->
     case file:read_file(Path) of
         {ok, Bin} ->
-          {ok, Map, _} = erlsom:parse_sax(Bin, #{}, fun callback/2),
-          Protocol = construct(Map),
-          {ok, Protocol};
+            {ok, Map, _} = erlsom:parse_sax(Bin, #{}, fun callback/2),
+            Protocol = construct(Map),
+            {ok, Protocol};
         {error, Reason}  -> {error, Reason}
     end.
+
+load(MainPath, ExtensionPath) ->
+    case file:read_file(MainPath) of
+        {ok, MainBin} ->
+            case file:read_file(ExtensionPath) of
+                {ok, ExtensionBin} ->
+                    {ok, MainMap, _} = erlsom:parse_sax(MainBin, #{}, fun callback/2),
+                    {ok, ExtensionMap, _} = erlsom:parse_sax(ExtensionBin, #{}, fun callback/2),
+                    {ok, Map} = merge_maps(MainMap, ExtensionMap),
+                    Protocol = construct(Map),
+                    {ok, Protocol};
+                {error, Reason}  -> {error, Reason}
+            end;
+        {error, Reason}  -> {error, Reason}
+    end.
+
 
 version(Protocol)-> Protocol#protocol.protocol_version.
 
