@@ -281,7 +281,7 @@ finish_classify_scope(L, {Scope, _C4N}, MandatoryLeft, Acc) ->
     end.
 
 classify_item([{F, V, _Size} | T], C, Acc0) when element(1, C) =:= field ->
-    Acc1 = [{field, F, V} | Acc0],
+    Acc1 = [{field, F#field.name, F, V} | Acc0],
     {ok, T, Acc1};
 classify_item([{_F, V, _Size} | T], C, Acc0) when element(1, C) =:= group ->
     Count = list_to_integer(V),
