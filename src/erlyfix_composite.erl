@@ -1,5 +1,5 @@
 -module(erlyfix_composite).
--include("erlyfix_records.hrl").
+-include("include/erlyfix.hrl").
 
 -export([name/1]).
 
