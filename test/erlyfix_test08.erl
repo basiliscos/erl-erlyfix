@@ -1,6 +1,6 @@
 -module(erlyfix_test08).
 -include_lib("eunit/include/eunit.hrl").
--include("erlyfix_records.hrl").
+-include("include/erlyfix.hrl").
 
 -define(DEBUG(X), io:format("DEBUG ~p:~p ~p~n",[?MODULE, ?LINE, X])).
 

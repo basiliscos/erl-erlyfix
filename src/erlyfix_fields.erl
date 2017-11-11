@@ -1,5 +1,5 @@
 -module(erlyfix_fields).
--include("erlyfix_records.hrl").
+-include("include/erlyfix.hrl").
 -define(DEBUG(X), io:format("DEBUG ~p:~p ~p~n",[?MODULE, ?LINE, X])).
 
 -export([serialize_field/4, validate/2, convert/2, as_label/2]).

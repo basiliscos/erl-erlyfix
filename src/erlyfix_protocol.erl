@@ -1,5 +1,5 @@
 -module(erlyfix_protocol).
--include("erlyfix_records.hrl").
+-include("include/erlyfix.hrl").
 
 -export([load/1, load/2, version/1, lookup/2, serialize/3]).
 -define(SEPARATOR, <<1:8>>).

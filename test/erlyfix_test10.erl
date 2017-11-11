@@ -1,6 +1,6 @@
 -module(erlyfix_test10).
 -include_lib("eunit/include/eunit.hrl").
--include("erlyfix_records.hrl").
+-include("include/erlyfix.hrl").
 
 load_test() ->
     MainPath = "test/FIX44.xml",

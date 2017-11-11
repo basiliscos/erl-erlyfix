@@ -1,5 +1,5 @@
 -module(erlyfix_parser).
--include("erlyfix_records.hrl").
+-include("include/erlyfix.hrl").
 
 -export([parse/2]).
 -define(SEPARATOR, <<1:8>>).
