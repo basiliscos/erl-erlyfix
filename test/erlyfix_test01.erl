@@ -7,8 +7,7 @@ load_test() ->
     ?assertEqual(enoent, Err).
 
 load() ->
-    Path = "test/FIX44.xml",
-    {ok, P} = erlyfix_protocol:load(Path),
+    {ok, P} = erlyfix_protocol:load("test/FIX44.xml"),
     P.
 
 
@@ -50,24 +49,28 @@ protocol_load_test() ->
 
     % component with group
     {ok, C_Stipulations} = erlyfix_protocol:lookup(P, {component, 'Stipulations' }),
-    {ok, G_NoStipulations} = maps:find('NoStipulations', C_Stipulations#component.composite4name),
+    {ok, G_NoStipulations_Id} = maps:find('NoStipulations', C_Stipulations#component.composite4name),
     {ok, _F_NoStipulations} = erlyfix_protocol:lookup(P, {field, by_name, 'NoStipulations'}),
     ?assertEqual(error, maps:find('NoStipulations', C_Stipulations#component.mandatoryComposites)),
+    G_NoStipulations = array:get(G_NoStipulations_Id, P#protocol.container),
     ?assertEqual('NoStipulations', G_NoStipulations#group.name),
     {ok, F_StipulationType} = maps:find('StipulationType', G_NoStipulations#group.composite4name),
     {ok, F_StipulationValue} = maps:find('StipulationValue', G_NoStipulations#group.composite4name),
-    {ok, G_NoStipulations} = maps:find(F_StipulationType, C_Stipulations#component.composite4field),
-    {ok, G_NoStipulations} = maps:find(F_StipulationValue, C_Stipulations#component.composite4field),
+    {ok, G_NoStipulations_Id} = maps:find(F_StipulationType, C_Stipulations#component.composite4field),
+    {ok, G_NoStipulations_Id} = maps:find(F_StipulationValue, C_Stipulations#component.composite4field),
 
     % component with group with component
     {ok, C_NestedParties} = erlyfix_protocol:lookup(P, {component, 'NestedParties' }),
-    {ok, G_NoNestedPartyIDs} = maps:find('NoNestedPartyIDs', C_NestedParties#component.composite4name),
-    {ok, C_NstdPtysSubGrp} = maps:find('NstdPtysSubGrp', G_NoNestedPartyIDs#group.composite4name),
-    {ok, G_NoNestedPartySubIDs} = maps:find('NoNestedPartySubIDs', C_NstdPtysSubGrp#component.composite4name),
+    {ok, G_NoNestedPartyIDs_Id} = maps:find('NoNestedPartyIDs', C_NestedParties#component.composite4name),
+    G_NoNestedPartyIDs = array:get(G_NoNestedPartyIDs_Id, P#protocol.container),
+    {ok, C_NstdPtysSubGrp_id} = maps:find('NstdPtysSubGrp', G_NoNestedPartyIDs#group.composite4name),
+    C_NstdPtysSubGrp = array:get(C_NstdPtysSubGrp_id, P#protocol.container),
+    {ok, G_NoNestedPartySubIDs_Id} = maps:find('NoNestedPartySubIDs', C_NstdPtysSubGrp#component.composite4name),
+    G_NoNestedPartySubIDs = array:get(G_NoNestedPartySubIDs_Id, P#protocol.container),
     {ok, F_NestedPartySubID} = maps:find('NestedPartySubID', G_NoNestedPartySubIDs#group.composite4name),
     {ok, F_NestedPartySubIDType} = maps:find('NestedPartySubIDType', G_NoNestedPartySubIDs#group.composite4name),
-    {ok, G_NoNestedPartyIDs} = maps:find(F_NestedPartySubID, C_NestedParties#component.composite4field),
-    {ok, G_NoNestedPartyIDs} = maps:find(F_NestedPartySubIDType, C_NestedParties#component.composite4field),
+    {ok, G_NoNestedPartyIDs_Id} = maps:find(F_NestedPartySubID, C_NestedParties#component.composite4field),
+    {ok, G_NoNestedPartyIDs_Id} = maps:find(F_NestedPartySubIDType, C_NestedParties#component.composite4field),
 
     % component with mandatory group
     {ok, C_CpctyConfGrp} = erlyfix_protocol:lookup(P, {component, 'CpctyConfGrp' }),

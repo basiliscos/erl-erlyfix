@@ -175,12 +175,14 @@ map_values({Value4Key, Value4Description}, [Value | Rest]) ->
 
 
 construct_fields(Acc, []) -> Acc;
-construct_fields({Field4Name, Field4Number}, [FieldDefinition | Rest]) ->
+construct_fields({Container, F4Name, F4Number}, [FieldDefinition | Rest]) ->
     ValuesList = FieldDefinition#field_def.values,
     {Value4Key, Value4Description} = map_values({ #{}, #{} }, ValuesList),
     Name = FieldDefinition#field_def.name,
     Number = FieldDefinition#field_def.number,
-    Field = #field{
+    Id = array:size(Container),
+    Field = #field {
+        id     = Id,
         name   = Name,
         number = Number,
         type   = FieldDefinition#field_def.type,
@@ -188,8 +190,9 @@ construct_fields({Field4Name, Field4Number}, [FieldDefinition | Rest]) ->
         value4description = Value4Description,
         composite4field = #{}},
     Acc = {
-        Field4Name#{ Name => Field },
-        Field4Number#{ Number => Field}
+        array:set(Id, Field, Container),
+        F4Name#{ Name => Id },
+        F4Number#{ Number => Id}
     },
     construct_fields(Acc, Rest).
 
@@ -215,92 +218,114 @@ zip(Refs, ReverseDefNames) ->
     {Co4Name, MC}.
 
 
-uplift_non_field(Composite, C4F, UpperC4F) ->
+uplift_non_field(Composite, C4F, UpperC4F, _Container) ->
     L0 = maps:keys(C4F),
     L1 = lists:map(fun(F) -> {F, Composite} end, L0),
     CC4Field = maps:from_list(L1),
     maps:merge(UpperC4F, CC4Field).
 
-uplift_list([], _F4Name, C4Field) -> C4Field;
-uplift_list([H | T], F4Name, C4Field) ->
-    % ?DEBUG(element(1, H)),
-    case element(1, H) of
-        field -> uplift_list(T, F4Name, C4Field#{H => H});
+uplift_list([], _F4Name, C4Field, _Container) -> C4Field;
+uplift_list([H | T], F4Name, C4Field, Container) ->
+    % ?DEBUG(H),
+    % ?DEBUG(C4Field),
+    Composite = array:get(H, Container),
+    % ?DEBUG(element(1, Composite)),
+    case element(1, Composite) of
+        field ->
+            uplift_list(T, F4Name, C4Field#{H => H}, Container);
         group ->
-            C4F1 = uplift_non_field(H, H#group.composite4field, C4Field),
+            C4F1 = uplift_non_field(H, Composite#group.composite4field, C4Field, Container),
             % "main" field, pointing to group count and group type
-            {ok, F} = maps:find(H#group.name, F4Name),
-            C4F2 = C4F1#{ F => H},
-            uplift_list(T, F4Name, C4F2);
+            {ok, FieldID} = maps:find(Composite#group.name, F4Name),
+            C4F2 = C4F1#{FieldID => H},
+            uplift_list(T, F4Name, C4F2, Container);
         component ->
-            C4F1 = uplift_non_field(H, H#component.composite4field,  C4Field),
-            uplift_list(T, F4Name, C4F1)
+            C4F1 = uplift_non_field(H, Composite#component.composite4field,  C4Field, Container),
+            uplift_list(T, F4Name, C4F1, Container)
     end.
-uplift(F4Name, C4Name) -> uplift_list(maps:values(C4Name), F4Name, #{}).
+uplift(F4Name, C4Name, Container) ->
+    % ?DEBUG(C4Name),
+    uplift_list(maps:values(C4Name), F4Name, #{}, Container).
 
 get_composites(Acc, _C4Name, _F4Name, []) -> {ok, Acc};
-get_composites(Acc, C4Name, F4Name, [H | T]) ->
+get_composites({Container0, L}, C4Name, F4Name, [H | T]) ->
     case element(1, H) of
         component_ref ->
             Name = H#component_ref.name,
             case maps:find(Name, C4Name) of
-                {ok, Composite} -> get_composites([{Name, Composite} | Acc], C4Name, F4Name, T);
+                {ok, Composite} ->
+                    Acc = {Container0, [{Name, Composite} | L] },
+                    get_composites(Acc, C4Name, F4Name, T);
                 error -> not_found
             end;
         field_ref ->
             Name = H#field_ref.name,
             case maps:find(Name, F4Name) of
-                {ok, Composite} -> get_composites([{Name, Composite} | Acc], C4Name, F4Name, T);
+                {ok, Composite} ->
+                    Acc = {Container0, [{Name, Composite} | L] },
+                    get_composites(Acc, C4Name, F4Name, T);
                 error -> not_found
             end;
         group_def ->
             Name = H#group_def.name,
             CompositeRefs = H#group_def.composites,
-            case get_composites([], C4Name, F4Name, CompositeRefs) of
-                {ok, SubCompositesNames} ->
+            case get_composites({Container0, []}, C4Name, F4Name, CompositeRefs) of
+                {ok, {Container1, SubCompositesNames}} ->
                     {Co4Name, MC} = zip(CompositeRefs, SubCompositesNames),
+                    Id = array:size(Container1),
                     Composite = #group{
+                        id = Id,
                         name = Name,
                         composite4name = Co4Name,
                         mandatoryComposites = MC,
-                        composite4field = uplift(F4Name, Co4Name)
+                        composite4field = uplift(F4Name, Co4Name, Container1)
                     },
-                    get_composites([{Name, Composite} | Acc], C4Name, F4Name, T);
+                    Acc = {
+                        array:set(Id, Composite, Container1),
+                        [{Name, Id} | L]
+                    },
+                    get_composites(Acc, C4Name, F4Name, T);
                 not_found -> not_found
             end
     end.
 
-construct_components(C4Name, F4Name, Queue) ->
+construct_components({Container0, C4Name} = Acc0, F4Name, Queue) ->
     case queue:is_empty(Queue) of
-        true -> C4Name;
+        true -> Acc0;
         false ->
             { {value, ComponentRef}, QLeft} = queue:out(Queue),
             %io:format("trying to construct composite ~p~n", [ComponentRef]),
             #component_def{ name = Name, composites = SubCompositeRefs } = ComponentRef,
-            case get_composites([], C4Name, F4Name, SubCompositeRefs) of
-                {ok, SubCompositesNames} ->
-                    %io:format("found subcomposites ~p :: ~p~n", [ComponentRef, SubCompositesNames]),
+            case get_composites({Container0, []}, C4Name, F4Name, SubCompositeRefs) of
+                {ok, {Container1, SubCompositesNames}} ->
+                    % io:format("found subcomposites ~p :: ~p~n", [ComponentRef, SubCompositesNames]),
                     {Co4Name, MC} = zip(SubCompositeRefs, SubCompositesNames),
+                    Id = array:size(Container1),
+                    % ?DEBUG(Co4Name),
                     Composite = #component{
+                        id  = Id,
                         name = Name,
                         composite4name = Co4Name,
                         mandatoryComposites = MC,
-                        composite4field = uplift(F4Name, Co4Name)
+                        composite4field = uplift(F4Name, Co4Name, Container1)
                     },
-                    C4NameNew = C4Name#{ Name => Composite },
-                    construct_components(C4NameNew, F4Name, QLeft);
+                    Acc1 = {
+                        array:set(Id, Composite, Container1),
+                        C4Name#{ Name => Id }
+                    },
+                    construct_components(Acc1, F4Name, QLeft);
                 not_found ->
                     Q2 = queue:in(ComponentRef, QLeft),
-                    construct_components(C4Name, F4Name, Q2)
+                    construct_components(Acc0, F4Name, Q2)
             end
     end.
 
 
 
 construct_messages(Acc, _C4Name, _F4Name, []) -> Acc;
-construct_messages({M4Name, M4Type}, C4Name, F4Name, [H | T]) ->
+construct_messages({M4Name, M4Type, Container0}, C4Name, F4Name, [H | T]) ->
     #message_ref { name = Name, type = Type, category = Category, composites = CompositeRefs} = H,
-    {ok, SubCompositesNames} = get_composites([], C4Name, F4Name, CompositeRefs),
+    {ok, {Container1, SubCompositesNames}} = get_composites({Container0, []}, C4Name, F4Name, CompositeRefs),
     {Co4Name, MC} = zip(CompositeRefs, SubCompositesNames),
     Message = #message {
         name = Name,
@@ -308,55 +333,57 @@ construct_messages({M4Name, M4Type}, C4Name, F4Name, [H | T]) ->
         category = Category,
         composite4name = Co4Name,
         mandatoryComposites = MC,
-        composite4field = uplift(F4Name, Co4Name)
+        composite4field = uplift(F4Name, Co4Name, Container1)
     },
     M4NameNew = M4Name#{ Name => Message},
     M4TypeNew = M4Type#{ Type => Message},
-    construct_messages({M4NameNew, M4TypeNew}, C4Name, F4Name, T).
+    construct_messages({M4NameNew, M4TypeNew, Container1}, C4Name, F4Name, T).
 
 construct(Map) ->
     % fields
     FieldDefinitions = maps:get(fields, Map),
     ComponentDefinitions = maps:get(components, Map),
-    {Field4Name, Field4Number} = construct_fields({ #{}, #{}}, FieldDefinitions),
+    {Container0, F4Name, F4Number} = construct_fields({array:new(), #{}, #{}}, FieldDefinitions),
 
     % components
     ComponentsQueue = queue:from_list(ComponentDefinitions),
-    C4Name = construct_components(#{}, Field4Name, ComponentsQueue),
+    {Container1, C4Name} = construct_components({Container0, #{}}, F4Name, ComponentsQueue),
 
     % header
     HeaderRefs = maps:get(header, Map),
-    {ok, HeaderCompositeNames} = get_composites([], C4Name, Field4Name, HeaderRefs),
+    {ok, {Container1, HeaderCompositeNames}} = get_composites({Container1, []}, C4Name, F4Name, HeaderRefs),
     {H_C4Name, H_MC} = zip(HeaderRefs, HeaderCompositeNames),
     Header = #header{
         composite4name = H_C4Name,
         mandatoryComposites = H_MC,
-        composite4field = uplift(Field4Name, H_C4Name)
+        composite4field = uplift(F4Name, H_C4Name, Container1)
     },
 
     % trailer
     TrailerRefs = maps:get(trailer, Map),
-    {ok, TrailerCompositeNames} = get_composites([], C4Name, Field4Name, TrailerRefs),
+    {ok, {Container1, TrailerCompositeNames}} = get_composites({Container1, []}, C4Name, F4Name, TrailerRefs),
     {T_C4Name, T_MC} = zip(TrailerRefs, TrailerCompositeNames),
     Trailer = #trailer{
         composite4name = T_C4Name,
         mandatoryComposites = T_MC,
-        composite4field = uplift(Field4Name, T_C4Name)
+        composite4field = uplift(F4Name, T_C4Name, Container1)
     },
 
     % messages
     MessagesRefs = maps:get(messages, Map),
-    {M4Name, M4Type} = construct_messages({#{}, #{}}, C4Name, Field4Name, MessagesRefs),
+    {M4Name, M4Type, Container2} = construct_messages({#{}, #{}, Container1}, C4Name, F4Name, MessagesRefs),
 
     #protocol{
         protocol_version = maps:get(version, Map),
         header           = Header,
         trailer          = Trailer,
-        field4name       = Field4Name,
-        field4number     = Field4Number,
+        field4name       = F4Name,
+        field4number     = F4Number,
         component4name   = C4Name,
         message4name     = M4Name,
-        message4type     = M4Type}.
+        message4type     = M4Type,
+        container        = Container2
+    }.
 
 %% Interface method
 
@@ -389,15 +416,23 @@ version(Protocol)-> Protocol#protocol.protocol_version.
 
 % lookup
 lookup(Protocol, Criterium) ->
-    {K, L} = case Criterium of
-        {field, by_name, X} -> {X, Protocol#protocol.field4name};
-        {field, by_number, X} -> {X, Protocol#protocol.field4number};
-        {component, X} -> {X, Protocol#protocol.component4name};
-        {message, by_name, X} -> {X, Protocol#protocol.message4name};
-        {message, by_type, X} -> {X, Protocol#protocol.message4type}
+    {K, L, JustId} = case Criterium of
+        {field, by_name, X} -> {X, Protocol#protocol.field4name, true};
+        {field, by_number, X} -> {X, Protocol#protocol.field4number, true};
+        {component, X} -> {X, Protocol#protocol.component4name, true};
+        {message, by_name, X} -> {X, Protocol#protocol.message4name, false};
+        {message, by_type, X} -> {X, Protocol#protocol.message4type, false}
     end,
     case maps:find(K, L) of
-        {ok, Field} -> {ok, Field};
+        {ok, CompositeId} ->
+            %?DEBUG(CompositeId),
+            case JustId of
+                true ->
+                    Composite = array:get(CompositeId, Protocol#protocol.container),
+                    {ok, Composite};
+                false ->
+                    {ok, CompositeId}
+            end;
         error -> not_found
     end.
 
@@ -422,7 +457,8 @@ serialize_group(AccContainer, CTX, Items) ->
     L = length(Items),
     case L > 0 of
         true ->
-            F = maps:get(CTX#context.name, CTX#context.protocol#protocol.field4name),
+            FieldId = maps:get(CTX#context.name, CTX#context.protocol#protocol.field4name),
+            F = array:get(FieldId, CTX#context.protocol#protocol.container),
             case serialize_field(AccContainer, F, unchecked, L) of
                 {ok, NewAccContainer} -> serialize_group_item(NewAccContainer, CTX, Items);
                 {error, Reason} -> {error, Reason}
@@ -446,9 +482,10 @@ serialize_composite({Size, L, _MC} = AccContainer, CTX, [H | T]) ->
     Name = erlang:element(1, H),
     % ?DEBUG(Name),
     case maps:find(Name, CTX#context.c4n) of
-        {ok, Composite} ->
+        {ok, CompositeId} ->
             % serialize head (subcomposite)
             Payload = erlang:element(2, H),
+            Composite = array:get(CompositeId, CTX#context.protocol#protocol.container),
             R = case erlang:element(1, Composite) of
                 component ->
                     NewCTX = #context {
@@ -483,7 +520,6 @@ serialize_composite({Size, L, _MC} = AccContainer, CTX, [H | T]) ->
 process_pipeline(Acc, []) -> {ok, Acc};
 process_pipeline(Acc0, [H | T]) ->
     R = H(Acc0),
-    % ?DEBUG(Acc0),
     case R of
         {ok, Acc1} -> process_pipeline(Acc1, T);
         {error, Details} -> {error, Details}
@@ -502,10 +538,10 @@ serialize_message(Protocol, Message, MessageFields) ->
     MC_managed = maps:without(ManagedFields, MC_i),
 
     % managed fields
-    F_Type = maps:get('MsgType', Protocol#protocol.field4name),
-    F_BodyLength = maps:get('BodyLength', Protocol#protocol.field4name),
-    F_BeginString = maps:get('BeginString', Protocol#protocol.field4name),
-    F_CheckSum = maps:get('CheckSum', Protocol#protocol.field4name),
+    {ok, F_Type} = lookup(Protocol, {field, by_name, 'MsgType' }),
+    {ok, F_BodyLength} = lookup(Protocol, {field, by_name, 'BodyLength' }),
+    {ok, F_BeginString} = lookup(Protocol, {field, by_name, 'BeginString' }),
+    {ok, F_CheckSum} = lookup(Protocol, {field, by_name, 'CheckSum' }),
 
     Fn_add_MsgType = fun(Acc0) ->
         serialize_field(Acc0, F_Type, unchecked, Message#message.type)

@@ -61,6 +61,7 @@
 %% Objects
 
 -record(field, {
+    id                  :: non_neg_integer(),
     name                :: string(),
     number              :: integer(),
     type                :: string(),
@@ -71,6 +72,7 @@
 -type field() :: #field{}.
 
 -record(component, {
+    id                  :: non_neg_integer(),
     name                :: string(),
     composite4name      :: map(),
     mandatoryComposites :: map(),
@@ -79,6 +81,7 @@
 -type component() :: #component{}.
 
 -record(group, {
+    id                  :: non_neg_integer(),
     name                :: string(),
     composite4name      :: map(),
     mandatoryComposites :: map(),
@@ -119,7 +122,8 @@
     field4name          :: map(),
     component4name      :: map(),
     message4name        :: map(),
-    message4type        :: map()
+    message4type        :: map(),
+    container           :: array:array()
 }).
 -type protocol() :: #protocol{}.
 

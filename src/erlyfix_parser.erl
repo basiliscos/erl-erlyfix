@@ -267,7 +267,7 @@ parse_tags(Body, P, Acc) ->
         _OtherResult -> _OtherResult
     end.
 
-finish_classify_scope(L, {Scope, _C4N}, MandatoryLeft, Acc) ->
+finish_classify_scope(L, {Scope, _C4N}, MandatoryLeft, Acc, Container) ->
     case maps:size(MandatoryLeft) of
         0 ->
             Acc1 = lists:reverse([{finish, Scope} | Acc ]),
@@ -280,43 +280,44 @@ finish_classify_scope(L, {Scope, _C4N}, MandatoryLeft, Acc) ->
             {error, Reason}
     end.
 
-classify_item([{F, V, _Size} | T], C, Acc0) when element(1, C) =:= field ->
+classify_item([{F, V, _Size} | T], C, Acc0, Container) when element(1, C) =:= field ->
     Acc1 = [{field, F#field.name, F, V} | Acc0],
     {ok, T, Acc1};
-classify_item([{_F, V, _Size} | T], C, Acc0) when element(1, C) =:= group ->
+classify_item([{_F, V, _Size} | T], C, Acc0, Container) when element(1, C) =:= group ->
     Count = list_to_integer(V),
     ScopeCTX = {C#group.name, Count},
     C4F = C#group.composite4field,
     MC = C#group.mandatoryComposites,
     % should fail, as C4F on top level all possibilitites
-    {ok, Acc1, L1} = start_classify_scope(T, {group, ScopeCTX, C4F, MC}),
+    {ok, Acc1, L1} = start_classify_scope(T, {group, ScopeCTX, C4F, MC}, Container),
     {ok, L1, lists:reverse(Acc1) ++ Acc0};
-classify_item(L, C, Acc0) when element(1, C) =:= component ->
+classify_item(L, C, Acc0, Container) when element(1, C) =:= component ->
     C4F = C#component.composite4field,
     MC = C#component.mandatoryComposites,
     ScopeCTX = {C#component.name},
-    {ok, Acc1, L1} = start_classify_scope(L, {component, ScopeCTX, C4F, MC}),
+    {ok, Acc1, L1} = start_classify_scope(L, {component, ScopeCTX, C4F, MC}, Container),
     {ok, L1, lists:reverse(Acc1) ++ Acc0}.
 
-classify_scope([], Current, MandatoryLeft, Acc) ->
-    finish_classify_scope([], Current, MandatoryLeft, Acc);
-classify_scope([H | _T] = L, {_Scope, C4F} = Current, MandatoryLeft, Acc) ->
+classify_scope([], Current, MandatoryLeft, Acc, Container) ->
+    finish_classify_scope([], Current, MandatoryLeft, Acc, Container);
+classify_scope([H | _T] = L, {_Scope, C4F} = Current, MandatoryLeft, Acc, Container) ->
     F = element(1, H),
-    case maps:find(F, C4F) of
-        {ok, C} ->
+    case maps:find(F#field.id, C4F) of
+        {ok, Composite_Id} ->
+            C = array:get(Composite_Id, Container),
             C_name = erlyfix_composite:name(C),
             MandatoryLeft1 = maps:remove(C_name, MandatoryLeft),
-            case classify_item(L, C, Acc) of
-                {ok, L1, Acc1} -> classify_scope(L1, Current, MandatoryLeft1, Acc1);
+            case classify_item(L, C, Acc, Container) of
+                {ok, L1, Acc1} -> classify_scope(L1, Current, MandatoryLeft1, Acc1, Container);
                 _OtherResult -> _OtherResult
             end;
-        error -> finish_classify_scope(L, Current, MandatoryLeft, Acc)
+        error -> finish_classify_scope(L, Current, MandatoryLeft, Acc, Container)
     end.
-start_classify_scope(List, {Scope, ScopeCTX, C4F, MC}) ->
-    classify_scope(List, {Scope, C4F}, MC, [{start, Scope, ScopeCTX}]).
+start_classify_scope(List, {Scope, ScopeCTX, C4F, MC}, Container) ->
+    classify_scope(List, {Scope, C4F}, MC, [{start, Scope, ScopeCTX}], Container).
 
 
-classify([], _Candidates, Acc) ->
+classify([], _Candidates, Acc, _Container) ->
     Acc1 = lists:reverse(Acc),
     Acc2 = lists:flatten(Acc1),
     {ok, Acc2};
@@ -325,11 +326,11 @@ classify([], _Candidates, Acc) ->
 % will be handled by the next scope. But as component has mandatory field
 % it will fail to construct current scope; that's at least true for "trailer"
 % and checksum field
-classify(L, [Scope | ScopeTail], Acc) ->
-    case start_classify_scope(L, Scope) of
+classify(L, [Scope | ScopeTail], Acc, Container) ->
+    case start_classify_scope(L, Scope, Container) of
         {ok, InnerAcc, L1} ->
             Acc1 = [InnerAcc | Acc],
-            classify(L1, ScopeTail, Acc1);
+            classify(L1, ScopeTail, Acc1, Container);
         _OtherResult -> _OtherResult
     end.
 
@@ -341,7 +342,7 @@ classify_message(M, P, L) ->
         {body, {}, M#message.composite4field, M#message.mandatoryComposites},
         {trailer, {}, T#trailer.composite4field, T#trailer.mandatoryComposites}
     ],
-    classify(L, Scopes, []).
+    classify(L, Scopes, [], P#protocol.container).
 
 parse(Data, P) ->
     case parse_managed_fields(Data, P) of
