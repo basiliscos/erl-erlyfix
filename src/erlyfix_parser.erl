@@ -201,9 +201,12 @@ extract_checksum({List, Size}, #context{protocol = P, data = _D}, Acc) ->
     end.
 
 
-confirm_checksum(Body, #context{protocol = _P, data = {List, Size}}, Acc) ->
+confirm_checksum(Body, #context{protocol = _P, data = {List, _Size}}, Acc) ->
+    % need to extract all previous parsed tags to get the actual size
+    % of data to be checksummed
     [{F, Checksum, ChecksumSize} | Acc0 ] = Acc,
-    CheckSummedSize = Size - ChecksumSize,
+    [_, {_F_BodyLength, BodyLength, S1}, {_F_BeginString, _, S2} | _T ] = Acc0,
+    CheckSummedSize = S2 + S1 + 2 + BodyLength,
     {SubjectData, _Tail} = lists:split(CheckSummedSize, List),
     ActualChecksum = erlyfix_utils:checksum(SubjectData),
     case Checksum =:= ActualChecksum of

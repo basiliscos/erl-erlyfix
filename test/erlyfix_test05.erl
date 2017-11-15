@@ -17,7 +17,7 @@ regular_message_parse_test() ->
     >>,
     IOList = binary_to_list(M),
     Size = length(IOList),
-    ?DEBUG(erlyfix_parser:parse({IOList, Size}, P)),
+    % ?DEBUG(erlyfix_parser:parse({IOList, Size}, P)),
     {ok, 'Logon', TagsMarkup, {"", 0}} = erlyfix_parser:parse({IOList, Size}, P),
     GetField = fun(Name) ->
         {ok, F} = erlyfix_protocol:lookup(P, {field, by_name, Name}),
@@ -49,5 +49,11 @@ regular_message_parse_test() ->
     ],
     % ?DEBUG(Markup_Expected),
     % ?DEBUG(TagsMarkup),
-    ?assertEqual(Markup_Expected, TagsMarkup).
+    ?assertEqual(Markup_Expected, TagsMarkup),
+
+    % check that we can parse 2 messages
+    IOList2 = IOList ++ IOList,
+    {ok, 'Logon', TagsMarkup, {IOList, Size}} = erlyfix_parser:parse({IOList2, Size * 2}, P).
+
+
 
