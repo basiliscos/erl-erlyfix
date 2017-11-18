@@ -17,8 +17,7 @@
 
 
 load() ->
-    Path = "test/FIX44.xml",
-    {ok, P} = erlyfix_protocol:load(Path),
+    {ok, P} = erlyfix_protocol:load("test/FIX44.xml"),
     P.
 
 sample_test() ->
@@ -39,9 +38,8 @@ sample_test() ->
                 {'MDEntryOriginator', <<"PromoXM1">>, {'QuoteEntryID', <<"82837832">>}}]
         ]}]}
     ]),
-    Size = iolist_size(IoList),
-    L = binary_to_list(iolist_to_binary(IoList)),
-    {ok, 'MarketDataSnapshotFullRefresh', Markup, {"", 0}} = erlyfix_parser:parse({L, Size}, P),
+    Msg = iolist_to_binary(IoList),
+    {ok, 'MarketDataSnapshotFullRefresh', Markup, <<>>} = erlyfix_parser:parse(Msg, P),
 
     M2Q = fun(M) ->
         #quote{
@@ -61,11 +59,11 @@ sample_test() ->
                 end;
             {field, 'MDEntryPx', _F, V} ->
                 [{Type, Map0} | T] = Stack,
-                Price = list_to_float(V),
+                Price = binary_to_float(V),
                 {ok, [ {Type, Map0#{price => Price} } | T ] };
             {field, 'MDEntrySize', _F, V} ->
                 [{Type, Map0} | T] = Stack,
-                Volume = list_to_integer(V),
+                Volume = binary_to_integer(V),
                 {ok, [ {Type, Map0#{volume => Volume} } | T ] };
             {field, 'MDEntryOriginator', _F, V} ->
                 [{Type, Map0} | T] = Stack,
@@ -102,8 +100,8 @@ sample_test() ->
     {ok, Tick} = lists:foldl(F, {ok, []}, Markup),
     % ?DEBUG(Tick),
     ?assertEqual(#tick{
-        symbol = "EURCHF",
-        bid = #quote{ price = 1.07509, volume = 200000, source = "PromoXM" },
-        ask = #quote{ price = 1.07539, volume = 100000, source = "PromoXM1" }
+        symbol = <<"EURCHF">>,
+        bid = #quote{ price = 1.07509, volume = 200000, source = <<"PromoXM">> },
+        ask = #quote{ price = 1.07539, volume = 100000, source = <<"PromoXM1">> }
     }, Tick).
 

@@ -35,45 +35,46 @@ serialize_field({Size, Acc}, F, checked, RawValue) ->
         {error, Descr} -> {error, Descr}
     end.
 
-extract(L0, Submatches, Converter) ->
+extract(D0, Submatches, Converter) ->
     F = fun({Skip, Count}) ->
-        L1 = lists:nthtail(Skip, L0),
-        {L2, _L3} = lists:split(Count, L1),
-        Converter(L2)
+        <<_D1:Skip/binary, D2:Count/binary, _D3/binary>> = D0,
+        Converter(D2)
     end,
     lists:map(F, Submatches).
 
-validate_by_re(Value, Size, Re) ->
+validate_by_re(Value, Re) ->
+    Size = byte_size(Value),
     case re:run(Value, Re) of
-        {match,[{0,Size}]} -> ok;
+        {match,[{0, Size}]} -> ok;
         _Else              -> error
     end.
 
-validate_field('STRING', Value, _Size) ->
+validate_field('STRING', Value) ->
     case re:run(Value, <<1>>) of
         {match, _Any} -> error;
         nomatch       -> ok
     end;
-validate_field('LENGTH', Value, Size) -> validate_by_re(Value, Size, <<"\\d+">>);
-validate_field('INT', Value, Size) -> validate_by_re(Value, Size, <<"-?\\d+">>);
-validate_field('FLOAT', Value, Size) -> validate_by_re(Value, Size, <<"-?\\d+(?:.\\d+)?">>);
-validate_field('CHAR', Value, Size) ->
-    case Size of
-        1    -> validate_field('STRING', Value, Size);
+validate_field('LENGTH', Value) -> validate_by_re(Value, <<"\\d+">>);
+validate_field('INT', Value) -> validate_by_re(Value, <<"-?\\d+">>);
+validate_field('FLOAT', Value) -> validate_by_re(Value, <<"-?\\d+(?:.\\d+)?">>);
+validate_field('CHAR', Value) ->
+    case byte_size(Value) of
+        1    -> validate_field('STRING', Value);
         _Any -> error
     end;
-validate_field('CURRENCY', Value, Size) ->
-    case Size of
-        3    -> validate_field('STRING', Value, Size);
+validate_field('CURRENCY', Value) ->
+    case byte_size(Value) of
+        3    -> validate_field('STRING', Value);
         _Any -> error
     end;
-validate_field('COUNTRY', Value, Size) -> validate_by_re(Value, Size, <<"[A-Z]{2}">>);
-validate_field('BOOLEAN', Value, Size) -> validate_by_re(Value, Size, <<"Y|N">>);
-validate_field('UTCTIMEONLY', Value, Size) ->
+validate_field('COUNTRY', Value) -> validate_by_re(Value, <<"[A-Z]{2}">>);
+validate_field('BOOLEAN', Value) -> validate_by_re(Value, <<"Y|N">>);
+validate_field('UTCTIMEONLY', Value) ->
     Re = <<"(\\d{2}):(\\d{2}):(\\d{2})(?:\\.(\\d{3}))?">>,
+    Size = byte_size(Value),
     case re:run(Value, Re) of
         {match, [{0, Size} | Submatches ]} ->
-            [H, M, S | T] = extract(Value, Submatches, fun list_to_integer/1),
+            [H, M, S | T] = extract(Value, Submatches, fun binary_to_integer/1),
             SS = case T of [] -> 0; [SubSeconds] -> SubSeconds end,
             R = ((H >= 0) andalso (H < 24)) andalso
                 ((M >= 0) andalso (M < 60)) andalso
@@ -82,68 +83,71 @@ validate_field('UTCTIMEONLY', Value, Size) ->
             case R of  true -> ok; false -> error end;
         _Any -> error
     end;
-validate_field('MONTHYEAR', Value, Size) ->
+validate_field('MONTHYEAR', Value) ->
     Re = <<"(\\d{4})(\\d{2})(?|((w(\\d))|(\\d{2})))?">>,
+    Size = byte_size(Value),
     case re:run(Value, Re) of
         {match, [{0, Size}, YY, MM | Rest ]} ->
             R = case Rest of
                 [] ->
-                    [Y, M] = extract(Value, [YY, MM], fun list_to_integer/1),
+                    [Y, M] = extract(Value, [YY, MM], fun binary_to_integer/1),
                     (Y > 1) andalso (M < 13);
                 [_W,_W, WW] ->
-                    [Y, M, W] = extract(Value, [YY, MM, WW], fun list_to_integer/1),
+                    [Y, M, W] = extract(Value, [YY, MM, WW], fun binary_to_integer/1),
                     (Y > 1) andalso (M < 13) andalso (W > 0) andalso (W < 6);
                 [DD, _S1, _S2, DD] ->
-                    [Y, M, D] = extract(Value, [YY, MM, DD], fun list_to_integer/1),
+                    [Y, M, D] = extract(Value, [YY, MM, DD], fun binary_to_integer/1),
                     (Y > 1) andalso (M < 13) andalso (D < 32)
             end,
             case R of  true -> ok; false -> error end;
         _Any -> error
     end;
-validate_field('LOCALMKTDATE', Value, Size) ->
+validate_field('LOCALMKTDATE', Value) ->
     Re = <<"(\\d{4})(\\d{2})(\\d{2})">>,
+    Size = byte_size(Value),
     case re:run(Value, Re) of
         {match, [{0, Size} | Submatches ]} ->
-            [_Y, M, D] = extract(Value, Submatches, fun list_to_integer/1),
+            [_Y, M, D] = extract(Value, Submatches, fun binary_to_integer/1),
             R = (M < 13) andalso (D < 32),
             case R of  true -> ok; false -> error end;
         _Any -> error
     end;
-validate_field('UTCTIMESTAMP', Value, Size) ->
+validate_field('UTCTIMESTAMP', Value) ->
+    Size = byte_size(Value),
     case re:run(Value, <<"(.+)-(.+)">>) of
-        {match, [{0, Size}, {_D_pos, D_sz} = D_ref, {_T_pos, T_sz} = T_ref ]} ->
+        {match, [{0, Size}, D_ref, T_ref]} ->
             [D_Bin, T_Bin] = extract(Value, [D_ref, T_ref], fun(X) -> X end),
-            case validate_field('LOCALMKTDATE', D_Bin, D_sz) of
-                ok -> validate_field('UTCTIMEONLY', T_Bin, T_sz);
+            case validate_field('LOCALMKTDATE', D_Bin) of
+                ok -> validate_field('UTCTIMEONLY', T_Bin);
                 error -> error
             end;
         _Any -> error
     end;
-validate_field('DATA', _Value, _Size) -> ok;
+validate_field('DATA', _Value) -> ok;
 % aliases
-validate_field('MULTIPLEVALUESTRING', Value, Size) -> validate_field('STRING', Value, Size);
-validate_field('EXCHANGE', Value, Size) -> validate_field('STRING', Value, Size);
-validate_field('SEQNUM', Value, Size) -> validate_field('LENGTH', Value, Size);
-validate_field('NUMINGROUP', Value, Size) -> validate_field('LENGTH', Value, Size);
-validate_field('AMT', Value, Size) -> validate_field('FLOAT', Value, Size);
-validate_field('PERCENTAGE', Value, Size) -> validate_field('FLOAT', Value, Size);
-validate_field('PRICE', Value, Size) -> validate_field('FLOAT', Value, Size);
-validate_field('QTY', Value, Size) -> validate_field('FLOAT', Value, Size);
-validate_field('PRICEOFFSET', Value, Size) -> validate_field('FLOAT', Value, Size);
-validate_field('UTCDATEONLY', Value, Size) -> validate_field('LOCALMKTDATE', Value, Size).
+validate_field('MULTIPLEVALUESTRING', Value) -> validate_field('STRING', Value);
+validate_field('EXCHANGE', Value) -> validate_field('STRING', Value);
+validate_field('SEQNUM', Value) -> validate_field('LENGTH', Value);
+validate_field('NUMINGROUP', Value) -> validate_field('LENGTH', Value);
+validate_field('AMT', Value) -> validate_field('FLOAT', Value);
+validate_field('PERCENTAGE', Value) -> validate_field('FLOAT', Value);
+validate_field('PRICE', Value) -> validate_field('FLOAT', Value);
+validate_field('QTY', Value) -> validate_field('FLOAT', Value);
+validate_field('PRICEOFFSET', Value) -> validate_field('FLOAT', Value);
+validate_field('UTCDATEONLY', Value) -> validate_field('LOCALMKTDATE', Value).
 
 
-validate({Value, ValueSize}, F) when is_list(Value) ->
-    validate_field(F#field.type, Value, ValueSize).
+validate(Value, F) when is_binary(Value) ->
+    validate_field(F#field.type, Value).
 
 
-convert_field('LENGTH', Value) -> list_to_integer(Value);
-convert_field('INT', Value) -> list_to_integer(Value);
+convert_field('LENGTH', Value) -> binary_to_integer(Value);
+convert_field('INT', Value) -> binary_to_integer(Value);
 convert_field('FLOAT', Value) ->
-    try list_to_float(Value) of
+    try binary_to_float(Value) of
         V -> V
     catch
-        error:badarg -> list_to_integer(Value)
+        error:badarg -> binary_to_integer(Value)
     end;
 convert_field('STRING', Value) -> Value;
 convert_field('CURRENCY', Value) -> Value;
@@ -152,29 +156,29 @@ convert_field('COUNTRY', Value) -> Value;
 convert_field('UTCTIMEONLY', Value) ->
     Re = <<"(\\d{2}):(\\d{2}):(\\d{2})(?:\\.(\\d{3}))?">>,
     {match, [{0, _Total} | Submatches ]} = re:run(Value, Re),
-    [H, M, S | T] = extract(Value, Submatches, fun list_to_integer/1),
+    [H, M, S | T] = extract(Value, Submatches, fun binary_to_integer/1),
     SS = case T of [] -> 0; [SubSeconds] -> SubSeconds end,
     #utc_time { hour = H, minute = M, second = S, ms = SS};
 convert_field('MONTHYEAR', Value) ->
     Re = <<"(\\d{4})(\\d{2})(?|((w(\\d))|(\\d{2})))?">>,
     {match, [{0, _Size}, YY, MM | Rest]} = re:run(Value, Re),
-    [Y, M] = extract(Value, [YY, MM], fun list_to_integer/1),
+    [Y, M] = extract(Value, [YY, MM], fun binary_to_integer/1),
     case Rest of
         [] -> #monthyear_week{ year = Y, month = M, week = 0 };
         [_W,_W, WW] ->
-            [W] = extract(Value, [WW], fun list_to_integer/1),
+            [W] = extract(Value, [WW], fun binary_to_integer/1),
             #monthyear_week{ year = Y, month = M, week = W };
         [DD, _S1, _S2, DD] ->
-            [D] = extract(Value, [DD], fun list_to_integer/1),
+            [D] = extract(Value, [DD], fun binary_to_integer/1),
             #monthyear_day{ year = Y, month = M, day = D }
     end;
 convert_field('LOCALMKTDATE', Value) ->
     Re = <<"(\\d{4})(\\d{2})(\\d{2})">>,
     {match, [{0, _Total} | Submatches ]} = re:run(Value, Re),
-    [Y, M, D] = extract(Value, Submatches, fun list_to_integer/1),
+    [Y, M, D] = extract(Value, Submatches, fun binary_to_integer/1),
     #fix_date { year = Y, month = M, day = D};
 convert_field('UTCTIMESTAMP', Value) ->
-    [V_Date, V_Time] = re:split(Value, <<"-">>, [{return, list}]),
+    [V_Date, V_Time] = re:split(Value, <<"-">>, [{return, binary}]),
     #utc_timestamp {
         date = convert_field('LOCALMKTDATE', V_Date),
         time = convert_field('UTCTIMEONLY', V_Time)
@@ -194,8 +198,8 @@ convert_field('UTCDATEONLY', Value) -> convert_field('LOCALMKTDATE', Value).
 
 convert(Value, F) -> convert_field(F#field.type, Value).
 
-as_label(Value, F) when is_list(Value) ->
-    try list_to_existing_atom(Value) of
+as_label(Value, F) when is_binary(Value) ->
+    try binary_to_existing_atom(Value, latin1) of
         AtomValue ->
             case maps:find(AtomValue, F#field.value4key) of
                 {ok, V} -> V#value_def.description;

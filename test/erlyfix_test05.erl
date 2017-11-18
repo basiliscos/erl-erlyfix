@@ -15,32 +15,29 @@ regular_message_parse_test() ->
         "34=1", 1, "52=20090107-18:15:16", 1, "98=0", 1, "108=60", 1, "384=2", 1,
         "372=abc", 1, "385=S", 1, "372=def", 1, "385=R", 1, "10=229", 1
     >>,
-    IOList = binary_to_list(M),
-    Size = length(IOList),
-    % ?DEBUG(erlyfix_parser:parse({IOList, Size}, P)),
-    {ok, 'Logon', TagsMarkup, {"", 0}} = erlyfix_parser:parse({IOList, Size}, P),
+    {ok, 'Logon', TagsMarkup, <<>>} = erlyfix_parser:parse(M, P),
     GetField = fun(Name) ->
         {ok, F} = erlyfix_protocol:lookup(P, {field, by_name, Name}),
         F
     end,
     Markup_Expected = [
         {start, header,{}},
-            {field, 'BeginString', GetField('BeginString'), "FIX.4.4"},
+            {field, 'BeginString', GetField('BeginString'), <<"FIX.4.4">>},
             {field, 'BodyLength', GetField('BodyLength'), 90},
-            {field, 'MsgType', GetField('MsgType'), "A"},
-            {field, 'SenderCompID', GetField('SenderCompID'), "me"},
-            {field, 'TargetCompID', GetField('TargetCompID'), "you"},
-            {field, 'MsgSeqNum', GetField('MsgSeqNum'), "1"},
-            {field, 'SendingTime', GetField('SendingTime'), "20090107-18:15:16"},
+            {field, 'MsgType', GetField('MsgType'), <<"A">>},
+            {field, 'SenderCompID', GetField('SenderCompID'), <<"me">>},
+            {field, 'TargetCompID', GetField('TargetCompID'), <<"you">>},
+            {field, 'MsgSeqNum', GetField('MsgSeqNum'), <<"1">>},
+            {field, 'SendingTime', GetField('SendingTime'), <<"20090107-18:15:16">>},
         {finish,header},
         {start,body,{}},
-            {field, 'EncryptMethod', GetField('EncryptMethod'), "0"},
-            {field, 'HeartBtInt', GetField('HeartBtInt'), "60"},
+            {field, 'EncryptMethod', GetField('EncryptMethod'), <<"0">>},
+            {field, 'HeartBtInt', GetField('HeartBtInt'), <<"60">>},
             {start,group,{'NoMsgTypes',2}},
-                {field, 'RefMsgType', GetField('RefMsgType'), "abc"},
-                {field, 'MsgDirection', GetField('MsgDirection'), "S"},
-                {field, 'RefMsgType', GetField('RefMsgType'), "def"},
-                {field, 'MsgDirection', GetField('MsgDirection'), "R"},
+                {field, 'RefMsgType', GetField('RefMsgType'), <<"abc">>},
+                {field, 'MsgDirection', GetField('MsgDirection'), <<"S">>},
+                {field, 'RefMsgType', GetField('RefMsgType'), <<"def">>},
+                {field, 'MsgDirection', GetField('MsgDirection'), <<"R">>},
             {finish,group},
         {finish,body},
         {start,trailer,{}},
@@ -52,8 +49,8 @@ regular_message_parse_test() ->
     ?assertEqual(Markup_Expected, TagsMarkup),
 
     % check that we can parse 2 messages
-    IOList2 = IOList ++ IOList,
-    {ok, 'Logon', TagsMarkup, {IOList, Size}} = erlyfix_parser:parse({IOList2, Size * 2}, P).
+    M2 = <<M/binary, M/binary>>,
+    {ok, 'Logon', TagsMarkup, M} = erlyfix_parser:parse(M2, P).
 
 
 

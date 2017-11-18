@@ -8,4 +8,7 @@ checksum(Acc, [H | T]) when is_list(H) ->
 checksum(Acc, [H | T]) when is_integer(H) ->
     checksum(Acc + H, T).
 
-checksum(IOList) -> checksum(0, IOList).
+checksum(IOList) when is_list(IOList) ->
+    checksum(0, IOList);
+checksum(Data) when is_binary(Data) ->
+    lists:sum([Char || <<Char>> <= Data]) rem 256.
