@@ -387,11 +387,17 @@ construct(Map) ->
 
 %% Interface method
 
+construct_protocol(Map) ->
+    Protocol0 = construct(Map),
+    Helpers = erlyfix_parser:compile(Protocol0),
+    Protocol0#protocol{ parser_helpers = Helpers}.
+
+
 load(Path) ->
     case file:read_file(Path) of
         {ok, Bin} ->
             {ok, Map, _} = erlsom:parse_sax(Bin, #{}, fun callback/2),
-            Protocol = construct(Map),
+            Protocol = construct_protocol(Map),
             {ok, Protocol};
         {error, Reason}  -> {error, Reason}
     end.
@@ -404,7 +410,7 @@ load(MainPath, ExtensionPath) ->
                     {ok, MainMap, _} = erlsom:parse_sax(MainBin, #{}, fun callback/2),
                     {ok, ExtensionMap, _} = erlsom:parse_sax(ExtensionBin, #{}, fun callback/2),
                     {ok, Map} = merge_maps(MainMap, ExtensionMap),
-                    Protocol = construct(Map),
+                    Protocol = construct_protocol(Map),
                     {ok, Protocol};
                 {error, Reason}  -> {error, Reason}
             end;

@@ -113,6 +113,16 @@
 }).
 -type message() :: #message{}.
 
+-record(parser_helpers, {
+    data_separator      :: re:mp(),
+    tag_separator       :: re:mp(),
+    digits              :: re:mp(),
+    int                 :: re:mp(),
+    checksum_digits     :: re:mp(),
+    checksum_size       :: non_neg_integer(),
+    begin_string        :: binary()
+}).
+-type parser_helpers() :: #parser_helpers{}.
 
 -record(protocol, {
     protocol_version    :: protocol_version(),
@@ -123,7 +133,8 @@
     component4name      :: map(),
     message4name        :: map(),
     message4type        :: map(),
-    container           :: array:array()
+    container           :: array:array(),
+    parser_helpers      :: parser_helpers()
 }).
 -type protocol() :: #protocol{}.
 

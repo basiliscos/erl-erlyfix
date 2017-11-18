@@ -1,17 +1,17 @@
 -module(erlyfix_parser).
 -include("include/erlyfix.hrl").
 
--export([parse/2]).
+-export([parse/2, compile/1]).
 -define(SEPARATOR, <<1:8>>).
 -define(DEBUG(X), io:format("DEBUG ~p:~p ~p~n",[?MODULE, ?LINE, X])).
 
 -record(context, {protocol, data}).
 
-pull_tagno(Data) ->
-    case re:split(Data, <<"=">>, [{parts, 2}, {return, binary}]) of
+pull_tagno(Data, Helpers) ->
+    case re:split(Data, Helpers#parser_helpers.data_separator, [{parts, 2}, {return, binary}]) of
         [TagNo, Rest] ->
             TagNoSize = byte_size(TagNo),
-            case re:run(TagNo, <<"\\d+">>) of
+            case re:run(TagNo, Helpers#parser_helpers.digits) of
                 {match, [{0, TagNoSize}]} ->
                     {ok, binary_to_integer(TagNo), TagNoSize, Rest};
                 _SomethingElse ->
@@ -22,13 +22,13 @@ pull_tagno(Data) ->
         [Data] -> not_found
     end.
 
-pull_tagvalue(Data, any_size) ->
-    case re:split(Data, <<1>>, [{parts, 2}, {return, binary}]) of
+pull_tagvalue(Data, any_size, Helpers) ->
+    case re:split(Data, Helpers#parser_helpers.tag_separator, [{parts, 2}, {return, binary}]) of
         [TagValue, Rest] ->
             {ok, TagValue, Rest};
         [Data] -> not_found
     end;
-pull_tagvalue(Data, TagValueSize) ->
+pull_tagvalue(Data, TagValueSize, _Helpers) ->
     case (byte_size(Data) + 1) < TagValueSize of
         true -> not_found;
         false ->
@@ -36,11 +36,11 @@ pull_tagvalue(Data, TagValueSize) ->
             {ok, TagValue, Rest}
     end.
 
-parse_tagvalue(Data, F, ValueSize) ->
+parse_tagvalue(Data, F, ValueSize, Helpers) ->
     N = F#field.number,
-    case pull_tagno(Data) of
+    case pull_tagno(Data, Helpers) of
         {ok, N, TagNoSize, Rest0} ->
-            case pull_tagvalue(Rest0, ValueSize) of
+            case pull_tagvalue(Rest0, ValueSize, Helpers) of
                 {ok, TagValue, Rest1} ->
                     case erlyfix_fields:validate(TagValue, F) of
                         ok    -> {ok, TagValue, TagNoSize + byte_size(TagValue) + 1, Rest1};
@@ -79,13 +79,14 @@ tagvalue_size(F, [H | _T]) ->
 
 
 parse_tagpair(Data, P, Acc) ->
-    case pull_tagno(Data) of
+    Helpers = P#protocol.parser_helpers,
+    case pull_tagno(Data, Helpers) of
         {ok, FieldNo, TagNoSize, Rest0} ->
             case erlyfix_protocol:lookup(P, {field, by_number, FieldNo}) of
                 {ok, F} ->
                     case tagvalue_size(F, Acc) of
                         {ok, ExpectdTagSize} ->
-                            case pull_tagvalue(Rest0, ExpectdTagSize) of
+                            case pull_tagvalue(Rest0, ExpectdTagSize, Helpers) of
                                 {ok, TagValue, Rest1} ->
                                     case erlyfix_fields:validate(TagValue, F) of
                                         ok    -> {ok, F, TagValue, TagNoSize + byte_size(TagValue), Rest1};
@@ -114,11 +115,10 @@ parse_tagpair(Data, P, Acc) ->
 
 parse_introduction(Data, #context{protocol = P, data = _D}, Acc)->
     {ok, F} = erlyfix_protocol:lookup(P, {field, by_name, 'BeginString' }),
-    Major = P#protocol.protocol_version#protocol_version.major,
-    Minor = P#protocol.protocol_version#protocol_version.minor,
-    BeginString = iolist_to_binary(io_lib:format("FIX.~B.~B", [Major, Minor])),
+    Helpers = P#protocol.parser_helpers,
+    BeginString = Helpers#parser_helpers.begin_string,
 
-    case parse_tagvalue(Data, F, any_size) of
+    case parse_tagvalue(Data, F, any_size, Helpers) of
         {error, Reason} -> {error, Reason};
         not_found ->
             LengthMin = byte_size(integer_to_binary(F#field.number))
@@ -146,7 +146,7 @@ parse_introduction(Data, #context{protocol = P, data = _D}, Acc)->
 
 parse_length(Data, #context{protocol = P, data = _D}, Acc) ->
     {ok, F} = erlyfix_protocol:lookup(P, {field, by_name, 'BodyLength' }),
-    case parse_tagvalue(Data, F, any_size) of
+    case parse_tagvalue(Data, F, any_size, P#protocol.parser_helpers) of
         {error, Reason} -> {error, Reason};
         not_found -> no_enough_data;
         {ok, BinaryValue, Size, Rest} ->
@@ -165,14 +165,15 @@ confirm_length(Data, _Ctx, Acc) ->
 extract_checksum(Data, #context{protocol = P, data = _D}, Acc) ->
     [{_F_length, BodyLength, _F_Lengt_Size} | _T] = Acc,
     {ok, F} = erlyfix_protocol:lookup(P, {field, by_name, 'CheckSum' }),
-    TagLength = iolist_size(io_lib:format(<<"~B=xxx", 1>>, [F#field.number])),
+    Helpers = P#protocol.parser_helpers,
+    TagLength = Helpers#parser_helpers.checksum_size,
     Size = byte_size(Data),
     case Size >= BodyLength + TagLength  of
         true ->
             <<Body:BodyLength/binary, Tail/binary>> = Data,
             <<TagData:TagLength/binary, NextMessage/binary>> = Tail,
             % checksum is exactly 3 digits
-            case parse_tagvalue(TagData, F, 3) of
+            case parse_tagvalue(TagData, F, 3, P#protocol.parser_helpers) of
                 {error, Reason} -> {error, Reason};
                 not_found ->
                     Err = io_lib:format("Checksum tag (~B) not found in sequence '~w'",
@@ -180,7 +181,7 @@ extract_checksum(Data, #context{protocol = P, data = _D}, Acc) ->
                     Reason = erlang:iolist_to_binary(Err),
                     {error, Reason};
                 {ok, Value, _TagLength, _Rest} ->
-                    case re:run(Value, <<"\\d{3}">>) of
+                    case re:run(Value, Helpers#parser_helpers.checksum_digits) of
                         {match,[{0,3}]} ->
                             Checksum = binary_to_integer(Value),
                             Acc1 = [
@@ -218,7 +219,7 @@ confirm_checksum(Body, #context{protocol = _P, data = Data}, Acc) ->
 
 extract_message_type(Body, #context{protocol = P, data = _D}, Acc) ->
     {ok, F} = erlyfix_protocol:lookup(P, {field, by_name, 'MsgType' }),
-    case parse_tagvalue(Body, F, any_size) of
+    case parse_tagvalue(Body, F, any_size, P#protocol.parser_helpers) of
         {ok, MsgTypeValue, TagSize, RestOfBody} ->
              try binary_to_existing_atom(MsgTypeValue, latin1) of
                 MsgType ->
@@ -345,6 +346,7 @@ classify_message(M, P, L) ->
     classify(L, Scopes, [], P#protocol.container).
 
 parse(Data, P) when is_binary(Data) ->
+    % ?DEBUG(P#protocol.parser_helpers),
     case parse_managed_fields(Data, P) of
         {ok, Acc, RestOfBody} ->
             [Message, TagMessageType, TagChecksum, {next_message, RestData} | Acc0 ] = Acc,
@@ -363,3 +365,24 @@ parse(Data, P) when is_binary(Data) ->
             end;
         _OtherResult -> _OtherResult
     end.
+
+compile(P) ->
+    {ok, DataSeparator} = re:compile(<<"=">>),
+    {ok, TagSeparator} = re:compile(<<1>>),
+    {ok, Digits} = re:compile(<<"\\d+">>),
+    {ok, ChecksumDigits} = re:compile(<<"\\d{3}">>),
+    {ok, F_CheckSum} = erlyfix_protocol:lookup(P, {field, by_name, 'CheckSum' }),
+    ChecksumSize = iolist_size(io_lib:format(<<"~B=xxx", 1>>, [F_CheckSum#field.number])),
+
+    Major = P#protocol.protocol_version#protocol_version.major,
+    Minor = P#protocol.protocol_version#protocol_version.minor,
+    BeginString = iolist_to_binary(io_lib:format("FIX.~B.~B", [Major, Minor])),
+
+    #parser_helpers {
+        data_separator  = DataSeparator,
+        tag_separator   = TagSeparator,
+        digits          = Digits,
+        checksum_digits = ChecksumDigits,
+        checksum_size   = ChecksumSize,
+        begin_string    = BeginString
+    }.
