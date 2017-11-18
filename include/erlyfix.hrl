@@ -118,6 +118,13 @@
     tag_separator       :: re:mp(),
     digits              :: re:mp(),
     int                 :: re:mp(),
+    float               :: re:mp(),
+    country             :: re:mp(),
+    boolean             :: re:mp(),
+    utctimeonly         :: re:mp(),
+    monthyear           :: re:mp(),
+    localmktdate        :: re:mp(),
+    utctimestamp        :: re:mp(),
     checksum_digits     :: re:mp(),
     checksum_size       :: non_neg_integer(),
     begin_string        :: binary()

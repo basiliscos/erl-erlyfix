@@ -42,7 +42,7 @@ parse_tagvalue(Data, F, ValueSize, Helpers) ->
         {ok, N, TagNoSize, Rest0} ->
             case pull_tagvalue(Rest0, ValueSize, Helpers) of
                 {ok, TagValue, Rest1} ->
-                    case erlyfix_fields:validate(TagValue, F) of
+                    case erlyfix_fields:validate(TagValue, F, Helpers) of
                         ok    -> {ok, TagValue, TagNoSize + byte_size(TagValue) + 1, Rest1};
                         error ->
                             Err = io_lib:format("Value '~w' does pass validatation for field ~B ('~s')",
@@ -88,7 +88,7 @@ parse_tagpair(Data, P, Acc) ->
                         {ok, ExpectdTagSize} ->
                             case pull_tagvalue(Rest0, ExpectdTagSize, Helpers) of
                                 {ok, TagValue, Rest1} ->
-                                    case erlyfix_fields:validate(TagValue, F) of
+                                    case erlyfix_fields:validate(TagValue, F, Helpers) of
                                         ok    -> {ok, F, TagValue, TagNoSize + byte_size(TagValue), Rest1};
                                         error ->
                                             Str = "Value '~s' does pass validatation for field '~s'",
@@ -378,11 +378,12 @@ compile(P) ->
     Minor = P#protocol.protocol_version#protocol_version.minor,
     BeginString = iolist_to_binary(io_lib:format("FIX.~B.~B", [Major, Minor])),
 
-    #parser_helpers {
+    Helpers = #parser_helpers {
         data_separator  = DataSeparator,
         tag_separator   = TagSeparator,
         digits          = Digits,
         checksum_digits = ChecksumDigits,
         checksum_size   = ChecksumSize,
         begin_string    = BeginString
-    }.
+    },
+    erlyfix_fields:compile(Helpers).

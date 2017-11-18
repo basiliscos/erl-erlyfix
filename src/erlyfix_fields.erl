@@ -2,7 +2,7 @@
 -include("include/erlyfix.hrl").
 -define(DEBUG(X), io:format("DEBUG ~p:~p ~p~n",[?MODULE, ?LINE, X])).
 
--export([serialize_field/4, validate/2, convert/2, as_label/2]).
+-export([serialize_field/4, validate/3, convert/2, as_label/2, compile/1]).
 
 serialize_field({Size, Acc}, F, unchecked, Value) ->
     Value_Bits = if
@@ -38,7 +38,8 @@ serialize_field({Size, Acc}, F, checked, RawValue) ->
 extract(D0, Submatches, Converter) ->
     F = fun({Skip, Count}) ->
         <<_D1:Skip/binary, D2:Count/binary, _D3/binary>> = D0,
-        Converter(D2)
+        V = Converter(D2),
+        V
     end,
     lists:map(F, Submatches).
 
@@ -49,30 +50,29 @@ validate_by_re(Value, Re) ->
         _Else              -> error
     end.
 
-validate_field('STRING', Value) ->
-    case re:run(Value, <<1>>) of
+validate_field('STRING', Value, H) ->
+    case re:run(Value, H#parser_helpers.tag_separator) of
         {match, _Any} -> error;
         nomatch       -> ok
     end;
-validate_field('LENGTH', Value) -> validate_by_re(Value, <<"\\d+">>);
-validate_field('INT', Value) -> validate_by_re(Value, <<"-?\\d+">>);
-validate_field('FLOAT', Value) -> validate_by_re(Value, <<"-?\\d+(?:.\\d+)?">>);
-validate_field('CHAR', Value) ->
+validate_field('LENGTH', Value, H) -> validate_by_re(Value, H#parser_helpers.digits);
+validate_field('INT', Value, H) -> validate_by_re(Value, H#parser_helpers.int);
+validate_field('FLOAT', Value, H) -> validate_by_re(Value, H#parser_helpers.float);
+validate_field('CHAR', Value, H) ->
     case byte_size(Value) of
-        1    -> validate_field('STRING', Value);
+        1    -> validate_field('STRING', Value, H);
         _Any -> error
     end;
-validate_field('CURRENCY', Value) ->
+validate_field('CURRENCY', Value, H) ->
     case byte_size(Value) of
-        3    -> validate_field('STRING', Value);
+        3    -> validate_field('STRING', Value, H);
         _Any -> error
     end;
-validate_field('COUNTRY', Value) -> validate_by_re(Value, <<"[A-Z]{2}">>);
-validate_field('BOOLEAN', Value) -> validate_by_re(Value, <<"Y|N">>);
-validate_field('UTCTIMEONLY', Value) ->
-    Re = <<"(\\d{2}):(\\d{2}):(\\d{2})(?:\\.(\\d{3}))?">>,
+validate_field('COUNTRY', Value, H) -> validate_by_re(Value, H#parser_helpers.country);
+validate_field('BOOLEAN', Value, H) -> validate_by_re(Value, H#parser_helpers.boolean);
+validate_field('UTCTIMEONLY', Value, Helper) ->
     Size = byte_size(Value),
-    case re:run(Value, Re) of
+    case re:run(Value, Helper#parser_helpers.utctimeonly) of
         {match, [{0, Size} | Submatches ]} ->
             [H, M, S | T] = extract(Value, Submatches, fun binary_to_integer/1),
             SS = case T of [] -> 0; [SubSeconds] -> SubSeconds end,
@@ -83,10 +83,9 @@ validate_field('UTCTIMEONLY', Value) ->
             case R of  true -> ok; false -> error end;
         _Any -> error
     end;
-validate_field('MONTHYEAR', Value) ->
-    Re = <<"(\\d{4})(\\d{2})(?|((w(\\d))|(\\d{2})))?">>,
+validate_field('MONTHYEAR', Value, H) ->
     Size = byte_size(Value),
-    case re:run(Value, Re) of
+    case re:run(Value, H#parser_helpers.monthyear) of
         {match, [{0, Size}, YY, MM | Rest ]} ->
             R = case Rest of
                 [] ->
@@ -102,43 +101,42 @@ validate_field('MONTHYEAR', Value) ->
             case R of  true -> ok; false -> error end;
         _Any -> error
     end;
-validate_field('LOCALMKTDATE', Value) ->
-    Re = <<"(\\d{4})(\\d{2})(\\d{2})">>,
+validate_field('LOCALMKTDATE', Value, H) ->
     Size = byte_size(Value),
-    case re:run(Value, Re) of
+    case re:run(Value,H#parser_helpers.localmktdate) of
         {match, [{0, Size} | Submatches ]} ->
             [_Y, M, D] = extract(Value, Submatches, fun binary_to_integer/1),
             R = (M < 13) andalso (D < 32),
             case R of  true -> ok; false -> error end;
         _Any -> error
     end;
-validate_field('UTCTIMESTAMP', Value) ->
+validate_field('UTCTIMESTAMP', Value, H) ->
     Size = byte_size(Value),
-    case re:run(Value, <<"(.+)-(.+)">>) of
+    case re:run(Value, H#parser_helpers.utctimestamp) of
         {match, [{0, Size}, D_ref, T_ref]} ->
             [D_Bin, T_Bin] = extract(Value, [D_ref, T_ref], fun(X) -> X end),
-            case validate_field('LOCALMKTDATE', D_Bin) of
-                ok -> validate_field('UTCTIMEONLY', T_Bin);
+            case validate_field('LOCALMKTDATE', D_Bin, H) of
+                ok -> validate_field('UTCTIMEONLY', T_Bin, H);
                 error -> error
             end;
         _Any -> error
     end;
-validate_field('DATA', _Value) -> ok;
+validate_field('DATA', _Value, _H) -> ok;
 % aliases
-validate_field('MULTIPLEVALUESTRING', Value) -> validate_field('STRING', Value);
-validate_field('EXCHANGE', Value) -> validate_field('STRING', Value);
-validate_field('SEQNUM', Value) -> validate_field('LENGTH', Value);
-validate_field('NUMINGROUP', Value) -> validate_field('LENGTH', Value);
-validate_field('AMT', Value) -> validate_field('FLOAT', Value);
-validate_field('PERCENTAGE', Value) -> validate_field('FLOAT', Value);
-validate_field('PRICE', Value) -> validate_field('FLOAT', Value);
-validate_field('QTY', Value) -> validate_field('FLOAT', Value);
-validate_field('PRICEOFFSET', Value) -> validate_field('FLOAT', Value);
-validate_field('UTCDATEONLY', Value) -> validate_field('LOCALMKTDATE', Value).
+validate_field('MULTIPLEVALUESTRING', Value, H) -> validate_field('STRING', Value, H);
+validate_field('EXCHANGE', Value, H) -> validate_field('STRING', Value, H);
+validate_field('SEQNUM', Value, H) -> validate_field('LENGTH', Value, H);
+validate_field('NUMINGROUP', Value, H) -> validate_field('LENGTH', Value, H);
+validate_field('AMT', Value, H) -> validate_field('FLOAT', Value, H);
+validate_field('PERCENTAGE', Value, H) -> validate_field('FLOAT', Value, H);
+validate_field('PRICE', Value, H) -> validate_field('FLOAT', Value, H);
+validate_field('QTY', Value, H) -> validate_field('FLOAT', Value, H);
+validate_field('PRICEOFFSET', Value, H) -> validate_field('FLOAT', Value, H);
+validate_field('UTCDATEONLY', Value, H) -> validate_field('LOCALMKTDATE', Value, H).
 
 
-validate(Value, F) when is_binary(Value) ->
-    validate_field(F#field.type, Value).
+validate(Value, F, Helpers) when is_binary(Value) ->
+    validate_field(F#field.type, Value, Helpers).
 
 
 convert_field('LENGTH', Value) -> binary_to_integer(Value);
@@ -208,3 +206,23 @@ as_label(Value, F) when is_binary(Value) ->
     catch
         error:badarg -> not_found
     end.
+
+compile(Helpers) ->
+    {ok, Int} = re:compile(<<"-?\\d+">>),
+    {ok, Float} = re:compile(<<"-?\\d+(?:.\\d+)?">>),
+    {ok, Country} = re:compile(<<"[A-Z]{2}">>),
+    {ok, Boolean} = re:compile(<<"Y|N">>),
+    {ok, UTCTime} = re:compile(<<"(\\d{2}):(\\d{2}):(\\d{2})(?:\\.(\\d{3}))?">>),
+    {ok, Monthyear} = re:compile(<<"(\\d{4})(\\d{2})(?|((w(\\d))|(\\d{2})))?">>),
+    {ok, Localmktdate} = re:compile(<<"(\\d{4})(\\d{2})(\\d{2})">>),
+    {ok, Utctimestamp} = re:compile(<<"(.+)-(.+)">>),
+    Helpers#parser_helpers {
+        int             = Int,
+        float           = Float,
+        country         = Country,
+        boolean         = Boolean,
+        utctimeonly     = UTCTime,
+        monthyear       = Monthyear,
+        localmktdate    = Localmktdate,
+        utctimestamp    = Utctimestamp
+    }.
