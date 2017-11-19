@@ -62,9 +62,9 @@
 
 -record(field, {
     id                  :: non_neg_integer(),
-    name                :: string(),
+    name                :: atom(),
     number              :: integer(),
-    type                :: string(),
+    type                :: atom(),
     value4key           :: map(),
     value4description   :: map(),
     composite4field     :: map()
@@ -73,7 +73,7 @@
 
 -record(component, {
     id                  :: non_neg_integer(),
-    name                :: string(),
+    name                :: atom(),
     composite4name      :: map(),
     mandatoryComposites :: map(),
     composite4field     :: map()
@@ -82,7 +82,7 @@
 
 -record(group, {
     id                  :: non_neg_integer(),
-    name                :: string(),
+    name                :: atom(),
     composite4name      :: map(),
     mandatoryComposites :: map(),
     composite4field     :: map()

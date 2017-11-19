@@ -288,7 +288,7 @@ classify_item([{_F, V, _Size} | T], C, Acc0, Container) when element(1, C) =:= g
     ScopeCTX = {C#group.name, Count},
     C4F = C#group.composite4field,
     MC = C#group.mandatoryComposites,
-    % should fail, as C4F on top level all possibilitites
+    % should not fail, as C4F on top level all possibilitites
     {ok, Acc1, L1} = start_classify_scope(T, {group, ScopeCTX, C4F, MC}, Container),
     {ok, L1, lists:reverse(Acc1) ++ Acc0};
 classify_item(L, C, Acc0, Container) when element(1, C) =:= component ->
@@ -307,10 +307,8 @@ classify_scope([H | _T] = L, {_Scope, C4F} = Current, MandatoryLeft, Acc, Contai
             C = array:get(Composite_Id, Container),
             C_name = erlyfix_composite:name(C),
             MandatoryLeft1 = maps:remove(C_name, MandatoryLeft),
-            case classify_item(L, C, Acc, Container) of
-                {ok, L1, Acc1} -> classify_scope(L1, Current, MandatoryLeft1, Acc1, Container);
-                _OtherResult -> _OtherResult
-            end;
+            {ok, L1, Acc1} = classify_item(L, C, Acc, Container),
+            classify_scope(L1, Current, MandatoryLeft1, Acc1, Container);
         error -> finish_classify_scope(L, Current, MandatoryLeft, Acc, Container)
     end.
 start_classify_scope(List, {Scope, ScopeCTX, C4F, MC}, Container) ->
