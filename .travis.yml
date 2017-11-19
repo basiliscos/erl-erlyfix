@@ -14,7 +14,7 @@ otp_release:
 install:
     - wget https://s3.amazonaws.com/rebar3/rebar3
     - chmod +x ./rebar3
-    - pip install codecov
+    - pip install --user codecov
 
 script:
     - ./rebar3 eunit --dir ./test
