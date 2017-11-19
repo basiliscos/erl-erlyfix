@@ -1,9 +1,8 @@
 -module(erlyfix_parser).
 -include("include/erlyfix.hrl").
+-include("debug.hrl").
 
 -export([parse/2, compile/1]).
--define(SEPARATOR, <<1:8>>).
--define(DEBUG(X), io:format("DEBUG ~p:~p ~p~n",[?MODULE, ?LINE, X])).
 
 -record(context, {protocol, data}).
 

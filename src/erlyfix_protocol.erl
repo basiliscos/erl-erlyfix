@@ -1,9 +1,8 @@
 -module(erlyfix_protocol).
 -include("include/erlyfix.hrl").
+-include("debug.hrl").
 
 -export([load/1, load/2, version/1, lookup/2, serialize/3]).
--define(SEPARATOR, <<1:8>>).
--define(DEBUG(X), io:format("DEBUG ~p:~p ~p~n",[?MODULE, ?LINE, X])).
 
 -record(context, {
     name        :: string(),
