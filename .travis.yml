@@ -13,7 +13,9 @@ otp_release:
     - 18.0
 install:
     - wget https://s3.amazonaws.com/rebar3/rebar3
-    - chmod +x ./rebar3
+    - wget https://github.com/gmr/urilib/raw/master/bin/covertool
+    - chmod +x ./rebar3 ./covertool
+
     - pip install --user codecov
 
 script:
@@ -21,4 +23,5 @@ script:
     - ./rebar3 dialyzer
 
 after_success:
-    codecov
+    - ./covertool -cover _build/test/cover/eunit.coverdata -appname urilib -output cobertura.xml
+    - codecov
