@@ -17,6 +17,7 @@ otp_release:
     - 17.1
     - 17.0
 install:
-  - ./ci install "${PWD:?}"/rebar3
+    - wget https://s3.amazonaws.com/rebar3/rebar3
+
 script:
-  - ./ci script "${PWD:?}"/rebar3
+    - ./rebar3 eunit --dir ./test
