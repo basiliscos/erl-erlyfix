@@ -181,3 +181,15 @@ Build
 -----
 
     $ rebar3 compile
+
+
+License
+-----
+
+Apache 2
+
+See also
+-----
+
+https://github.com/maxlapshin/fix - FIX-client implementation as OTP-application, includes network layer.
+
