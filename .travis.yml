@@ -18,6 +18,7 @@ otp_release:
     - 17.0
 install:
     - wget https://s3.amazonaws.com/rebar3/rebar3
+    - chmod +x ./rebar3
 
 script:
     - ./rebar3 eunit --dir ./test
