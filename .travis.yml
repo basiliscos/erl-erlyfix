@@ -17,3 +17,4 @@ install:
 
 script:
     - ./rebar3 eunit --dir ./test
+    - ./rebar3 dialyzer
