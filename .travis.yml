@@ -1,0 +1,24 @@
+sudo: false
+language: erlang
+otp_release:
+    - 20.0
+    - 19.3
+    - 19.2
+    - 19.1
+    - 19.0
+    - 18.3
+    - 18.2.1
+    - 18.2
+    - 18.1
+    - 18.0
+    - 17.5
+    - 17.4
+    - 17.3
+    - 17.1
+    - 17.0
+- R16B03-1before_install:
+  - ./ci before_install "${PWD:?}"/rebar3
+install:
+  - ./ci install "${PWD:?}"/rebar3
+script:
+  - ./ci script "${PWD:?}"/rebar3
