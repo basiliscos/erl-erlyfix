@@ -2,7 +2,7 @@
 -include("include/erlyfix.hrl").
 -include("debug.hrl").
 
--export([serialize_field/4, validate/3, convert/2, as_label/2, compile/1]).
+-export([serialize_field/4, validate/3, convert/2, as_label/2, compile/0]).
 
 serialize_field({Size, Acc}, F, unchecked, Value) ->
     Value_Bits = if
@@ -51,13 +51,13 @@ validate_by_re(Value, Re) ->
     end.
 
 validate_field('STRING', Value, H) ->
-    case re:run(Value, H#parser_helpers.tag_separator) of
+    case re:run(Value, H#field_REs.tag_separator) of
         {match, _Any} -> error;
         nomatch       -> ok
     end;
-validate_field('LENGTH', Value, H) -> validate_by_re(Value, H#parser_helpers.digits);
-validate_field('INT', Value, H) -> validate_by_re(Value, H#parser_helpers.int);
-validate_field('FLOAT', Value, H) -> validate_by_re(Value, H#parser_helpers.float);
+validate_field('LENGTH', Value, H) -> validate_by_re(Value, H#field_REs.digits);
+validate_field('INT', Value, H) -> validate_by_re(Value, H#field_REs.int);
+validate_field('FLOAT', Value, H) -> validate_by_re(Value, H#field_REs.float);
 validate_field('CHAR', Value, H) ->
     case byte_size(Value) of
         1    -> validate_field('STRING', Value, H);
@@ -68,11 +68,11 @@ validate_field('CURRENCY', Value, H) ->
         3    -> validate_field('STRING', Value, H);
         _Any -> error
     end;
-validate_field('COUNTRY', Value, H) -> validate_by_re(Value, H#parser_helpers.country);
-validate_field('BOOLEAN', Value, H) -> validate_by_re(Value, H#parser_helpers.boolean);
+validate_field('COUNTRY', Value, H) -> validate_by_re(Value, H#field_REs.country);
+validate_field('BOOLEAN', Value, H) -> validate_by_re(Value, H#field_REs.boolean);
 validate_field('UTCTIMEONLY', Value, Helper) ->
     Size = byte_size(Value),
-    case re:run(Value, Helper#parser_helpers.utctimeonly) of
+    case re:run(Value, Helper#field_REs.utctimeonly) of
         {match, [{0, Size} | Submatches ]} ->
             [H, M, S | T] = extract(Value, Submatches, fun binary_to_integer/1),
             SS = case T of [] -> 0; [SubSeconds] -> SubSeconds end,
@@ -85,7 +85,7 @@ validate_field('UTCTIMEONLY', Value, Helper) ->
     end;
 validate_field('MONTHYEAR', Value, H) ->
     Size = byte_size(Value),
-    case re:run(Value, H#parser_helpers.monthyear) of
+    case re:run(Value, H#field_REs.monthyear) of
         {match, [{0, Size}, YY, MM | Rest ]} ->
             R = case Rest of
                 [] ->
@@ -103,7 +103,7 @@ validate_field('MONTHYEAR', Value, H) ->
     end;
 validate_field('LOCALMKTDATE', Value, H) ->
     Size = byte_size(Value),
-    case re:run(Value,H#parser_helpers.localmktdate) of
+    case re:run(Value,H#field_REs.localmktdate) of
         {match, [{0, Size} | Submatches ]} ->
             [_Y, M, D] = extract(Value, Submatches, fun binary_to_integer/1),
             R = (M < 13) andalso (D < 32),
@@ -112,7 +112,7 @@ validate_field('LOCALMKTDATE', Value, H) ->
     end;
 validate_field('UTCTIMESTAMP', Value, H) ->
     Size = byte_size(Value),
-    case re:run(Value, H#parser_helpers.utctimestamp) of
+    case re:run(Value, H#field_REs.utctimestamp) of
         {match, [{0, Size}, D_ref, T_ref]} ->
             [D_Bin, T_Bin] = extract(Value, [D_ref, T_ref], fun(X) -> X end),
             case validate_field('LOCALMKTDATE', D_Bin, H) of
@@ -207,7 +207,10 @@ as_label(Value, F) when is_binary(Value) ->
         error:badarg -> not_found
     end.
 
-compile(Helpers) ->
+compile() ->
+    {ok, DataSeparator} = re:compile(<<"=">>),
+    {ok, TagSeparator} = re:compile(<<1>>),
+    {ok, Digits} = re:compile(<<"\\d+">>),
     {ok, Int} = re:compile(<<"-?\\d+">>),
     {ok, Float} = re:compile(<<"-?\\d+(?:.\\d+)?">>),
     {ok, Country} = re:compile(<<"[A-Z]{2}">>),
@@ -216,7 +219,10 @@ compile(Helpers) ->
     {ok, Monthyear} = re:compile(<<"(\\d{4})(\\d{2})(?|((w(\\d))|(\\d{2})))?">>),
     {ok, Localmktdate} = re:compile(<<"(\\d{4})(\\d{2})(\\d{2})">>),
     {ok, Utctimestamp} = re:compile(<<"(.+)-(.+)">>),
-    Helpers#parser_helpers {
+    #field_REs {
+        data_separator  = DataSeparator,
+        tag_separator   = TagSeparator,
+        digits          = Digits,
         int             = Int,
         float           = Float,
         country         = Country,

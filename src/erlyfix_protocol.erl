@@ -2,10 +2,10 @@
 -include("include/erlyfix.hrl").
 -include("debug.hrl").
 
--export([load/1, load/2, version/1, lookup/2, serialize/3]).
+-export([load/1, load/2, serialize/3]).
 
 -record(context, {
-    name        :: string(),
+    name        :: atom(),
     protocol    :: protocol(),
     c4n         :: map()
 }).
@@ -372,7 +372,7 @@ construct(Map) ->
     MessagesRefs = maps:get(messages, Map),
     {M4Name, M4Type, Container2} = construct_messages({#{}, #{}, Container1}, C4Name, F4Name, MessagesRefs),
 
-    #protocol{
+    #uncompiled_protocol {
         protocol_version = maps:get(version, Map),
         header           = Header,
         trailer          = Trailer,
@@ -384,22 +384,35 @@ construct(Map) ->
         container        = Container2
     }.
 
+compile_protocol(Map) ->
+    P = construct(Map),
+    #protocol {
+        protocol_version    = P#uncompiled_protocol.protocol_version,
+        header              = P#uncompiled_protocol.header,
+        trailer             = P#uncompiled_protocol.trailer,
+        field4number        = P#uncompiled_protocol.field4number,
+        field4name          = P#uncompiled_protocol.field4name,
+        component4name      = P#uncompiled_protocol.component4name,
+        message4name        = P#uncompiled_protocol.message4name,
+        message4type        = P#uncompiled_protocol.message4type,
+        container           = P#uncompiled_protocol.container,
+        parser_helpers      = erlyfix_parser:compile(P)
+    }.
+
 %% Interface method
 
-construct_protocol(Map) ->
-    Protocol0 = construct(Map),
-    Helpers = erlyfix_parser:compile(Protocol0),
-    Protocol0#protocol{ parser_helpers = Helpers}.
-
+-spec load(string()) -> {ok, protocol()} | {error, string()}.
 
 load(Path) ->
     case file:read_file(Path) of
         {ok, Bin} ->
             {ok, Map, _} = erlsom:parse_sax(Bin, #{}, fun callback/2),
-            Protocol = construct_protocol(Map),
+            Protocol = compile_protocol(Map),
             {ok, Protocol};
         {error, Reason}  -> {error, Reason}
     end.
+
+-spec load(string(), string()) -> {ok, protocol()} | {error, string()}.
 
 load(MainPath, ExtensionPath) ->
     case file:read_file(MainPath) of
@@ -409,37 +422,13 @@ load(MainPath, ExtensionPath) ->
                     {ok, MainMap, _} = erlsom:parse_sax(MainBin, #{}, fun callback/2),
                     {ok, ExtensionMap, _} = erlsom:parse_sax(ExtensionBin, #{}, fun callback/2),
                     {ok, Map} = merge_maps(MainMap, ExtensionMap),
-                    Protocol = construct_protocol(Map),
+                    Protocol = compile_protocol(Map),
                     {ok, Protocol};
                 {error, Reason}  -> {error, Reason}
             end;
         {error, Reason}  -> {error, Reason}
     end.
 
-
-version(Protocol)-> Protocol#protocol.protocol_version.
-
-% lookup
-lookup(Protocol, Criterium) ->
-    {K, L, JustId} = case Criterium of
-        {field, by_name, X} -> {X, Protocol#protocol.field4name, true};
-        {field, by_number, X} -> {X, Protocol#protocol.field4number, true};
-        {component, X} -> {X, Protocol#protocol.component4name, true};
-        {message, by_name, X} -> {X, Protocol#protocol.message4name, false};
-        {message, by_type, X} -> {X, Protocol#protocol.message4type, false}
-    end,
-    case maps:find(K, L) of
-        {ok, CompositeId} ->
-            %?DEBUG(CompositeId),
-            case JustId of
-                true ->
-                    Composite = array:get(CompositeId, Protocol#protocol.container),
-                    {ok, Composite};
-                false ->
-                    {ok, CompositeId}
-            end;
-        error -> not_found
-    end.
 
 % serialize group item
 serialize_group_item(AccContainer, CTX, []) ->
@@ -543,10 +532,11 @@ serialize_message(Protocol, Message, MessageFields) ->
     MC_managed = maps:without(ManagedFields, MC_i),
 
     % managed fields
-    {ok, F_Type} = lookup(Protocol, {field, by_name, 'MsgType' }),
-    {ok, F_BodyLength} = lookup(Protocol, {field, by_name, 'BodyLength' }),
-    {ok, F_BeginString} = lookup(Protocol, {field, by_name, 'BeginString' }),
-    {ok, F_CheckSum} = lookup(Protocol, {field, by_name, 'CheckSum' }),
+
+    {ok, F_Type} = erlyfix_utils:lookup_field('MsgType', Protocol),
+    {ok, F_BodyLength} = erlyfix_utils:lookup_field('BodyLength', Protocol),
+    {ok, F_BeginString} = erlyfix_utils:lookup_field('BeginString', Protocol),
+    {ok, F_CheckSum} = erlyfix_utils:lookup_field('CheckSum', Protocol),
 
     Fn_add_MsgType = fun(Acc0) ->
         serialize_field(Acc0, F_Type, unchecked, Message#message.type)
@@ -587,6 +577,17 @@ serialize_message(Protocol, Message, MessageFields) ->
         {ok, {_Size, Acc, _MC2}} -> {ok, Acc};
         {error, Reason} -> {error, Reason}
     end.
+
+-type message_name()    :: atom().
+-type field_name()      :: atom().
+-type field_payload()   :: binary() | string() | integer() | float().
+-type field_item()      :: {field_name(), field_payload()}.
+-type group_name()      :: atom().
+-type group_item()      :: {group_name(), [[item()]] }.
+-type component_name()  :: atom().
+-type component_item()  :: {component_name(), [item()]}.
+-type item()            :: field_item() | group_item() | component_item().
+-spec serialize(protocol(), message_name(), [item()]) -> {ok, serialize} | {error, string()}.
 
 serialize(Protocol, MessageName, MessageFields) ->
     case maps:find(MessageName, Protocol#protocol.message4name) of

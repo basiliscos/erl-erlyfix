@@ -16,7 +16,7 @@ message_with_component_parse_test() ->
     >>,
     {ok, 'MarketDataRequestReject', TagsMarkup, <<>>} = erlyfix_parser:parse(M, P),
     GetField = fun(Name) ->
-        {ok, F} = erlyfix_protocol:lookup(P, {field, by_name, Name}),
+        {ok, F} = erlyfix_utils:lookup(P, {field, by_name, Name}),
         F
     end,
     Markup_Expected = [
@@ -53,7 +53,7 @@ complex_message_parse_test() ->
     >>,
     {ok, 'IOI', TagsMarkup, <<>>} = erlyfix_parser:parse(M, P),
     GetField = fun(Name) ->
-        {ok, F} = erlyfix_protocol:lookup(P, {field, by_name, Name}),
+        {ok, F} = erlyfix_utils:lookup(P, {field, by_name, Name}),
         F
     end,
     Markup_Expected = [

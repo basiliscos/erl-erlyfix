@@ -16,7 +16,7 @@
 -record(field_def, {
     name      :: atom(),
     number    :: non_neg_integer(),
-    type      :: string(),
+    type      :: atom(),
     values    :: [value_def()]
 }).
 -type field_def() :: #field_def{}.
@@ -113,7 +113,7 @@
 }).
 -type message() :: #message{}.
 
--record(parser_helpers, {
+-record(field_REs, {
     data_separator      :: re:mp(),
     tag_separator       :: re:mp(),
     digits              :: re:mp(),
@@ -124,12 +124,30 @@
     utctimeonly         :: re:mp(),
     monthyear           :: re:mp(),
     localmktdate        :: re:mp(),
-    utctimestamp        :: re:mp(),
+    utctimestamp        :: re:mp()
+}).
+-type field_REs() :: #field_REs{}.
+
+-record(parser_helpers, {
     checksum_digits     :: re:mp(),
     checksum_size       :: non_neg_integer(),
-    begin_string        :: binary()
+    begin_string        :: binary(),
+    field_REs           :: field_REs()
 }).
 -type parser_helpers() :: #parser_helpers{}.
+
+-record(uncompiled_protocol, {
+    protocol_version    :: protocol_version(),
+    header              :: header(),
+    trailer             :: trailer(),
+    field4number        :: map(),
+    field4name          :: map(),
+    component4name      :: map(),
+    message4name        :: map(),
+    message4type        :: map(),
+    container           :: array:array()
+}).
+-type uncompiled_protocol() :: #uncompiled_protocol{}.
 
 -record(protocol, {
     protocol_version    :: protocol_version(),

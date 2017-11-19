@@ -10,9 +10,9 @@ load() ->
 
 fields_test() ->
     P = load(),
-    H = P#protocol.parser_helpers,
+    H = P#protocol.parser_helpers#parser_helpers.field_REs,
     % String
-    {ok, F_Account} = erlyfix_protocol:lookup(P, {field, by_name, 'Account' }),
+    {ok, F_Account} = erlyfix_utils:lookup(P, {field, by_name, 'Account' }),
     ok = erlyfix_fields:validate(<<"String">>, F_Account, H),
     ok = erlyfix_fields:validate(<<"">>, F_Account, H),
     error = erlyfix_fields:validate(<<1>>, F_Account, H),
@@ -20,12 +20,12 @@ fields_test() ->
     not_found = erlyfix_fields:as_label(<<"String">>, F_Account),
 
     % String with mapping
-    {ok, F_AdvTransType} = erlyfix_protocol:lookup(P, {field, by_name, 'AdvTransType' }),
+    {ok, F_AdvTransType} = erlyfix_utils:lookup(P, {field, by_name, 'AdvTransType' }),
     <<"NEW">> = erlyfix_fields:as_label(<<"N">>, F_AdvTransType),
     not_found = erlyfix_fields:as_label(<<"ZZZ">>, F_AdvTransType),
 
     % INT
-    {ok, F_AllocStatus} = erlyfix_protocol:lookup(P, {field, by_name, 'AllocStatus' }),
+    {ok, F_AllocStatus} = erlyfix_utils:lookup(P, {field, by_name, 'AllocStatus' }),
     ok = erlyfix_fields:validate(<<"5">>, F_AllocStatus, H),
     ok = erlyfix_fields:validate(<<"5555">>, F_AllocStatus, H),
     ok = erlyfix_fields:validate(<<"-5555">>, F_AllocStatus, H),
@@ -37,18 +37,18 @@ fields_test() ->
     5555 = erlyfix_fields:convert(<<"5555">>, F_AllocStatus),
 
     % LENGTH
-    {ok, F_SecureDataLen} = erlyfix_protocol:lookup(P, {field, by_name, 'SecureDataLen' }),
+    {ok, F_SecureDataLen} = erlyfix_utils:lookup(P, {field, by_name, 'SecureDataLen' }),
     ok = erlyfix_fields:validate(<<"5555">>, F_SecureDataLen, H),
     error = erlyfix_fields:validate(<<"-5555">>, F_SecureDataLen, H),
 
     % DATA
-    {ok, F_SecureData} = erlyfix_protocol:lookup(P, {field, by_name, 'SecureData' }),
+    {ok, F_SecureData} = erlyfix_utils:lookup(P, {field, by_name, 'SecureData' }),
     ok = erlyfix_fields:validate(<<"5555">>, F_SecureData, H),
     ok = erlyfix_fields:validate(<<1, "5555", 1>>, F_SecureData, H),
     <<"zzz">> = erlyfix_fields:convert(<<"zzz">>, F_SecureData),
 
     % FLOAT
-    {ok, F_ContAmtValue} = erlyfix_protocol:lookup(P, {field, by_name, 'ContAmtValue' }),
+    {ok, F_ContAmtValue} = erlyfix_utils:lookup(P, {field, by_name, 'ContAmtValue' }),
     ok = erlyfix_fields:validate(<<"0">>, F_ContAmtValue, H),
     ok = erlyfix_fields:validate(<<"3.14">>, F_ContAmtValue, H),
     ok = erlyfix_fields:validate(<<"-5">>, F_ContAmtValue, H),
@@ -64,20 +64,20 @@ fields_test() ->
     5 = erlyfix_fields:convert(<<"5">>, F_ContAmtValue),
 
     % CHAR
-    {ok, F_CommType} = erlyfix_protocol:lookup(P, {field, by_name, 'CommType' }),
+    {ok, F_CommType} = erlyfix_utils:lookup(P, {field, by_name, 'CommType' }),
     ok = erlyfix_fields:validate(<<"0">>, F_CommType, H),
     error = erlyfix_fields:validate(<<"">>, F_CommType, H),
     error = erlyfix_fields:validate(<<"zz">>, F_CommType, H),
 
     % CURRENCY
-    {ok, F_ContAmtCurr} = erlyfix_protocol:lookup(P, {field, by_name, 'ContAmtCurr' }),
+    {ok, F_ContAmtCurr} = erlyfix_utils:lookup(P, {field, by_name, 'ContAmtCurr' }),
     ok = erlyfix_fields:validate(<<"USD">>, F_ContAmtCurr, H),
     error = erlyfix_fields:validate(<<"USDJPY">>, F_ContAmtCurr, H),
     error = erlyfix_fields:validate(<<"">>, F_ContAmtCurr, H),
     <<"USD">> = erlyfix_fields:convert(<<"USD">>, F_ContAmtCurr),
 
     % BOOLEAN
-    {ok, F_PossDupFlag} = erlyfix_protocol:lookup(P, {field, by_name, 'PossDupFlag' }),
+    {ok, F_PossDupFlag} = erlyfix_utils:lookup(P, {field, by_name, 'PossDupFlag' }),
     ok = erlyfix_fields:validate(<<"Y">>, F_PossDupFlag, H),
     ok = erlyfix_fields:validate(<<"N">>, F_PossDupFlag, H),
     error = erlyfix_fields:validate(<<"n">>, F_PossDupFlag, H),
@@ -87,13 +87,13 @@ fields_test() ->
     <<"NO">> = erlyfix_fields:as_label(<<"N">>, F_PossDupFlag),
 
     % COUNTRY
-    {ok, F_Country} = erlyfix_protocol:lookup(P, {field, by_name, 'Country' }),
+    {ok, F_Country} = erlyfix_utils:lookup(P, {field, by_name, 'Country' }),
     ok = erlyfix_fields:validate(<<"BY">>, F_Country, H),
     error = erlyfix_fields:validate(<<"BYN">>, F_Country, H),
     <<"BY">> = erlyfix_fields:convert(<<"BY">>, F_Country),
 
     % UTCTIMEONLY
-    {ok, F_MDEntryTime} = erlyfix_protocol:lookup(P, {field, by_name, 'MDEntryTime' }),
+    {ok, F_MDEntryTime} = erlyfix_utils:lookup(P, {field, by_name, 'MDEntryTime' }),
     ok = erlyfix_fields:validate(<<"11:12:55">>, F_MDEntryTime, H),
     ok = erlyfix_fields:validate(<<"11:12:55.123">>, F_MDEntryTime, H),
     error = erlyfix_fields:validate(<<"25:12:55">>, F_MDEntryTime, H),
@@ -110,7 +110,7 @@ fields_test() ->
     ),
 
     % MONTHYEAR
-    {ok, F_MaturityMonthYear} = erlyfix_protocol:lookup(P, {field, by_name, 'MaturityMonthYear' }),
+    {ok, F_MaturityMonthYear} = erlyfix_utils:lookup(P, {field, by_name, 'MaturityMonthYear' }),
     ok = erlyfix_fields:validate(<<"199812">>, F_MaturityMonthYear, H),
     ok = erlyfix_fields:validate(<<"19981210">>, F_MaturityMonthYear, H),
     ok = erlyfix_fields:validate(<<"199812w1">>, F_MaturityMonthYear, H),
@@ -132,7 +132,7 @@ fields_test() ->
     ),
 
     % LOCALMKTDATE
-    {ok, F_IssueDate} = erlyfix_protocol:lookup(P, {field, by_name, 'IssueDate' }),
+    {ok, F_IssueDate} = erlyfix_utils:lookup(P, {field, by_name, 'IssueDate' }),
     ok = erlyfix_fields:validate(<<"19981231">>, F_IssueDate, H),
     error = erlyfix_fields:validate(<<"199812">>, F_IssueDate, H),
     error = erlyfix_fields:validate(<<"19981231111">>, F_IssueDate, H),
@@ -142,7 +142,7 @@ fields_test() ->
     ),
 
     % UTCTIMESTAMP
-    {ok, F_LastUpdateTime} = erlyfix_protocol:lookup(P, {field, by_name, 'LastUpdateTime' }),
+    {ok, F_LastUpdateTime} = erlyfix_utils:lookup(P, {field, by_name, 'LastUpdateTime' }),
     ok = erlyfix_fields:validate(<<"19981231-23:59:59">>, F_LastUpdateTime, H),
     ok = erlyfix_fields:validate(<<"19981231-23:59:59.123">>, F_LastUpdateTime, H),
     error = erlyfix_fields:validate(<<"1998123123:59:59.123">>, F_LastUpdateTime, H),
@@ -159,43 +159,43 @@ fields_test() ->
     % check for aliases
 
     % MULTIPLEVALUESTRING
-    {ok, F_ExecInst} = erlyfix_protocol:lookup(P, {field, by_name, 'ExecInst' }),
+    {ok, F_ExecInst} = erlyfix_utils:lookup(P, {field, by_name, 'ExecInst' }),
     ok = erlyfix_fields:validate(<<"String">>, F_ExecInst, H),
     <<"String">> = erlyfix_fields:convert(<<"String">>, F_ExecInst),
     % EXCHANGE
-    {ok, F_LastMkt} = erlyfix_protocol:lookup(P, {field, by_name, 'LastMkt' }),
+    {ok, F_LastMkt} = erlyfix_utils:lookup(P, {field, by_name, 'LastMkt' }),
     ok = erlyfix_fields:validate(<<"String">>, F_LastMkt, H),
     <<"String">> = erlyfix_fields:convert(<<"String">>, F_LastMkt),
     % SEQNUM
-    {ok, F_MsgSeqNum} = erlyfix_protocol:lookup(P, {field, by_name, 'MsgSeqNum' }),
+    {ok, F_MsgSeqNum} = erlyfix_utils:lookup(P, {field, by_name, 'MsgSeqNum' }),
     ok = erlyfix_fields:validate(<<"123">>, F_MsgSeqNum, H),
     123 = erlyfix_fields:convert(<<"123">>, F_MsgSeqNum),
     % NUMINGROUP
-    {ok, F_NoExecs} = erlyfix_protocol:lookup(P, {field, by_name, 'NoExecs' }),
+    {ok, F_NoExecs} = erlyfix_utils:lookup(P, {field, by_name, 'NoExecs' }),
     ok = erlyfix_fields:validate(<<"123">>, F_NoExecs, H),
     123 = erlyfix_fields:convert(<<"123">>, F_NoExecs),
     % ATM
-    {ok, F_Concession} = erlyfix_protocol:lookup(P, {field, by_name, 'Concession' }),
+    {ok, F_Concession} = erlyfix_utils:lookup(P, {field, by_name, 'Concession' }),
     ok = erlyfix_fields:validate(<<"123">>, F_Concession, H),
     123 = erlyfix_fields:convert(<<"123">>, F_Concession),
     % PERCENTAGE
-    {ok, F_LegRepurchaseRate} = erlyfix_protocol:lookup(P, {field, by_name, 'LegRepurchaseRate' }),
+    {ok, F_LegRepurchaseRate} = erlyfix_utils:lookup(P, {field, by_name, 'LegRepurchaseRate' }),
     ok = erlyfix_fields:validate(<<"123">>, F_LegRepurchaseRate, H),
     123 = erlyfix_fields:convert(<<"123">>, F_LegRepurchaseRate),
     % PRICE
-    {ok, F_BasisFeaturePrice} = erlyfix_protocol:lookup(P, {field, by_name, 'BasisFeaturePrice' }),
+    {ok, F_BasisFeaturePrice} = erlyfix_utils:lookup(P, {field, by_name, 'BasisFeaturePrice' }),
     ok = erlyfix_fields:validate(<<"123">>, F_BasisFeaturePrice, H),
     123 = erlyfix_fields:convert(<<"123">>, F_BasisFeaturePrice),
     % QTY
-    {ok, F_DefBidSize} = erlyfix_protocol:lookup(P, {field, by_name, 'DefBidSize' }),
+    {ok, F_DefBidSize} = erlyfix_utils:lookup(P, {field, by_name, 'DefBidSize' }),
     ok = erlyfix_fields:validate(<<"123">>, F_DefBidSize, H),
     123 = erlyfix_fields:convert(<<"123">>, F_DefBidSize),
     % PRICEOFFSET
-    {ok, F_PriceImprovement} = erlyfix_protocol:lookup(P, {field, by_name, 'PriceImprovement' }),
+    {ok, F_PriceImprovement} = erlyfix_utils:lookup(P, {field, by_name, 'PriceImprovement' }),
     ok = erlyfix_fields:validate(<<"123">>, F_PriceImprovement, H),
     123 = erlyfix_fields:convert(<<"123">>, F_PriceImprovement),
     % UTCDATEONLY
-    {ok, F_MDEntryDate} = erlyfix_protocol:lookup(P, {field, by_name, 'MDEntryDate' }),
+    {ok, F_MDEntryDate} = erlyfix_utils:lookup(P, {field, by_name, 'MDEntryDate' }),
     ok = erlyfix_fields:validate(<<"19981231">>, F_MDEntryDate, H),
     ?assertEqual(
         #fix_date { year = 1998, month = 12, day = 31},

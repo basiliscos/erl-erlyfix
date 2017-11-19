@@ -7,10 +7,11 @@
 -record(context, {protocol, data}).
 
 pull_tagno(Data, Helpers) ->
-    case re:split(Data, Helpers#parser_helpers.data_separator, [{parts, 2}, {return, binary}]) of
+    REs = Helpers#parser_helpers.field_REs,
+    case re:split(Data, REs#field_REs.data_separator, [{parts, 2}, {return, binary}]) of
         [TagNo, Rest] ->
             TagNoSize = byte_size(TagNo),
-            case re:run(TagNo, Helpers#parser_helpers.digits) of
+            case re:run(TagNo, REs#field_REs.digits) of
                 {match, [{0, TagNoSize}]} ->
                     {ok, binary_to_integer(TagNo), TagNoSize, Rest};
                 _SomethingElse ->
@@ -22,7 +23,8 @@ pull_tagno(Data, Helpers) ->
     end.
 
 pull_tagvalue(Data, any_size, Helpers) ->
-    case re:split(Data, Helpers#parser_helpers.tag_separator, [{parts, 2}, {return, binary}]) of
+    RE  = Helpers#parser_helpers.field_REs#field_REs.tag_separator,
+    case re:split(Data, RE, [{parts, 2}, {return, binary}]) of
         [TagValue, Rest] ->
             {ok, TagValue, Rest};
         [Data] -> not_found
@@ -41,7 +43,7 @@ parse_tagvalue(Data, F, ValueSize, Helpers) ->
         {ok, N, TagNoSize, Rest0} ->
             case pull_tagvalue(Rest0, ValueSize, Helpers) of
                 {ok, TagValue, Rest1} ->
-                    case erlyfix_fields:validate(TagValue, F, Helpers) of
+                    case erlyfix_fields:validate(TagValue, F, Helpers#parser_helpers.field_REs) of
                         ok    -> {ok, TagValue, TagNoSize + byte_size(TagValue) + 1, Rest1};
                         error ->
                             Err = io_lib:format("Value '~w' does pass validatation for field ~B ('~s')",
@@ -76,18 +78,18 @@ tagvalue_size(F, [H | _T]) ->
         _AnyOtherType -> {ok, any_size}
     end.
 
-
 parse_tagpair(Data, P, Acc) ->
     Helpers = P#protocol.parser_helpers,
     case pull_tagno(Data, Helpers) of
         {ok, FieldNo, TagNoSize, Rest0} ->
-            case erlyfix_protocol:lookup(P, {field, by_number, FieldNo}) of
+            case erlyfix_utils:lookup_field_by_no(FieldNo, P) of
                 {ok, F} ->
                     case tagvalue_size(F, Acc) of
                         {ok, ExpectdTagSize} ->
                             case pull_tagvalue(Rest0, ExpectdTagSize, Helpers) of
                                 {ok, TagValue, Rest1} ->
-                                    case erlyfix_fields:validate(TagValue, F, Helpers) of
+                                    REs = Helpers#parser_helpers.field_REs,
+                                    case erlyfix_fields:validate(TagValue, F, REs) of
                                         ok    -> {ok, F, TagValue, TagNoSize + byte_size(TagValue), Rest1};
                                         error ->
                                             Str = "Value '~s' does pass validatation for field '~s'",
@@ -113,7 +115,7 @@ parse_tagpair(Data, P, Acc) ->
     end.
 
 parse_introduction(Data, #context{protocol = P, data = _D}, Acc)->
-    {ok, F} = erlyfix_protocol:lookup(P, {field, by_name, 'BeginString' }),
+    {ok, F} =  erlyfix_utils:lookup_field('BeginString', P),
     Helpers = P#protocol.parser_helpers,
     BeginString = Helpers#parser_helpers.begin_string,
 
@@ -144,7 +146,7 @@ parse_introduction(Data, #context{protocol = P, data = _D}, Acc)->
     end.
 
 parse_length(Data, #context{protocol = P, data = _D}, Acc) ->
-    {ok, F} = erlyfix_protocol:lookup(P, {field, by_name, 'BodyLength' }),
+    {ok, F} = erlyfix_utils:lookup_field('BodyLength', P),
     case parse_tagvalue(Data, F, any_size, P#protocol.parser_helpers) of
         {error, Reason} -> {error, Reason};
         not_found -> no_enough_data;
@@ -163,12 +165,12 @@ confirm_length(Data, _Ctx, Acc) ->
 
 extract_checksum(Data, #context{protocol = P, data = _D}, Acc) ->
     [{_F_length, BodyLength, _F_Lengt_Size} | _T] = Acc,
-    {ok, F} = erlyfix_protocol:lookup(P, {field, by_name, 'CheckSum' }),
     Helpers = P#protocol.parser_helpers,
     TagLength = Helpers#parser_helpers.checksum_size,
     Size = byte_size(Data),
     case Size >= BodyLength + TagLength  of
         true ->
+            {ok, F} = erlyfix_utils:lookup_field('CheckSum', P),
             <<Body:BodyLength/binary, Tail/binary>> = Data,
             <<TagData:TagLength/binary, NextMessage/binary>> = Tail,
             % checksum is exactly 3 digits
@@ -217,12 +219,12 @@ confirm_checksum(Body, #context{protocol = _P, data = Data}, Acc) ->
     end.
 
 extract_message_type(Body, #context{protocol = P, data = _D}, Acc) ->
-    {ok, F} = erlyfix_protocol:lookup(P, {field, by_name, 'MsgType' }),
+    {ok, F} = erlyfix_utils:lookup_field('MsgType', P),
     case parse_tagvalue(Body, F, any_size, P#protocol.parser_helpers) of
         {ok, MsgTypeValue, TagSize, RestOfBody} ->
              try binary_to_existing_atom(MsgTypeValue, latin1) of
                 MsgType ->
-                    case erlyfix_protocol:lookup(P, {message, by_type, MsgType }) of
+                    case erlyfix_utils:lookup_message(MsgType, P) of
                         {ok, Message} ->
                             % special case, we put Message on top of accumulator
                             {ok, [Message, {F, MsgTypeValue, TagSize} | Acc], RestOfBody};
@@ -342,6 +344,28 @@ classify_message(M, P, L) ->
     ],
     classify(L, Scopes, [], P#protocol.container).
 
+-type header_start()    :: {start, header,{}}.
+-type header_end()      :: {finish, header,{}}.
+-type trailer_start()   :: {start, header,{}}.
+-type trailer_end()     :: {finish, header,{}}.
+-type body_start()      :: {start, body,{}}.
+-type body_end()        :: {finish, body,{}}.
+
+-type field_name()      :: atom().
+-type group_name()      :: atom().
+-type component_name()  :: atom().
+-type field_markup()    :: {field, field_name(), field(), integer() | binary()}.
+-type group_start()     :: {start, group, {group_name(), non_neg_integer()}}.
+-type group_end()       :: {finish, group}.
+-type component_start() :: {start, component, {component_name()}}.
+-type component_end()   :: {finish, component}.
+
+-type markup()          :: header_start() | header_end() | trailer_start() | trailer_end()
+                            | body_start() | body_end() | group_start() | group_end()
+                            | component_start() | component_end() | field_markup().
+
+-spec parse(binary(), protocol()) -> {ok, [markup()]} | {error, string()}.
+
 parse(Data, P) when is_binary(Data) ->
     % ?DEBUG(P#protocol.parser_helpers),
     case parse_managed_fields(Data, P) of
@@ -364,23 +388,19 @@ parse(Data, P) when is_binary(Data) ->
     end.
 
 compile(P) ->
-    {ok, DataSeparator} = re:compile(<<"=">>),
-    {ok, TagSeparator} = re:compile(<<1>>),
-    {ok, Digits} = re:compile(<<"\\d+">>),
+    Field_REs = erlyfix_fields:compile(),
+
     {ok, ChecksumDigits} = re:compile(<<"\\d{3}">>),
-    {ok, F_CheckSum} = erlyfix_protocol:lookup(P, {field, by_name, 'CheckSum' }),
+    {ok, F_CheckSum} = erlyfix_utils:lookup_field('CheckSum', P),
     ChecksumSize = iolist_size(io_lib:format(<<"~B=xxx", 1>>, [F_CheckSum#field.number])),
 
-    Major = P#protocol.protocol_version#protocol_version.major,
-    Minor = P#protocol.protocol_version#protocol_version.minor,
+    Major = P#uncompiled_protocol.protocol_version#protocol_version.major,
+    Minor = P#uncompiled_protocol.protocol_version#protocol_version.minor,
     BeginString = iolist_to_binary(io_lib:format("FIX.~B.~B", [Major, Minor])),
 
-    Helpers = #parser_helpers {
-        data_separator  = DataSeparator,
-        tag_separator   = TagSeparator,
-        digits          = Digits,
+    #parser_helpers {
         checksum_digits = ChecksumDigits,
         checksum_size   = ChecksumSize,
-        begin_string    = BeginString
-    },
-    erlyfix_fields:compile(Helpers).
+        begin_string    = BeginString,
+        field_REs       = Field_REs
+    }.
