@@ -8,27 +8,27 @@
 %% Definitions
 
 -record(value_def, {
-    key         :: string(),
-    description :: string()
+    key         :: atom(),
+    description :: binary()
 }).
 -type value_def() :: #value_def{}.
 
 -record(field_def, {
-    name      :: string(),
-    number    :: integer(),
+    name      :: atom(),
+    number    :: non_neg_integer(),
     type      :: string(),
     values    :: [value_def()]
 }).
 -type field_def() :: #field_def{}.
 
 -record(component_def, {
-    name       :: string(),
+    name       :: atom(),
     composites :: [composite_ref()]
 }).
 -type component_def() :: #component_def{}.
 
 -record(group_def, {
-    name       :: string(),
+    name       :: atom(),
     composites :: [composite_ref()],
     required   :: true|false
 }).
@@ -37,13 +37,13 @@
 %% References
 
 -record(field_ref, {
-    name      :: string(),
+    name      :: atom(),
     required  :: true|false
 }).
 -type field_ref() :: #field_ref{}.
 
 -record(component_ref, {
-    name       :: string(),
+    name       :: atom(),
     required   :: true|false
 }).
 -type component_ref() :: #component_ref{}.
@@ -52,9 +52,9 @@
 -type composite_ref() :: field_ref() | group_def() | component_ref().
 
 -record(message_ref, {
-    name       :: string(),
-    type       :: string(),
-    category   :: string(),
+    name       :: atom(),
+    type       :: atom(),
+    category   :: atom(),
     composites :: [composite_ref()]
 }).
 
@@ -63,7 +63,7 @@
 -record(field, {
     id                  :: non_neg_integer(),
     name                :: atom(),
-    number              :: integer(),
+    number              :: non_neg_integer(),
     type                :: atom(),
     value4key           :: map(),
     value4description   :: map(),
@@ -104,9 +104,9 @@
 -type trailer() :: #trailer{}.
 
 -record(message, {
-    name                :: string(),
-    type                :: string(),
-    category            :: string(),
+    name                :: atom(),
+    type                :: atom(),
+    category            :: atom(),
     composite4name      :: map(),
     mandatoryComposites :: map(),
     composite4field     :: map()
