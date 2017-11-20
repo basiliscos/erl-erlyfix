@@ -177,6 +177,18 @@ end,
 
 ```
 
+It is possible to map field binary value to human-readable binary, i.e. when `F` points to `MDEntryType` field, and `V` contains `<<"1">>`, it is possible to map it to binary`<<OFFER>>`
+
+```erlang
+Label = erlyfix_fields:as_label(V, F).
+```
+
+(It is not possible to use atoms here, as the string description in XML-specification exceed possible atom length in Erlang).
+
+In general it is assumed that you should use this library with tigth cooperation with XML-specifictions.
+
+
+
 Build
 -----
 
