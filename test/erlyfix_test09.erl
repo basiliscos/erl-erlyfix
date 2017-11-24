@@ -67,25 +67,19 @@ sample_test() ->
             {field, 'MDEntryOriginator', _F, V} ->
                 [{Type, Map0} | T] = Stack,
                 {ok, [ {Type, Map0#{source => V} } | T ] };
-            {start,group,{'NoMDEntries',Count}} ->
-                case Count of
-                    2 -> {ok, [{group, 'NoMsgTypes' } | Stack]};
-                    _ -> {error, Stack}
+            {start,group,{'NoMDEntries', 2}} -> Acc;
+            {start,group,{'NoMDEntries', _}} -> {error, Stack};
+            {finish,group,{'NoMDEntries', 2}} ->
+                [E1, E2 | T] = Stack,
+                {T1, M1} = E1,
+                Q1 = M2Q(M1),
+                {T2, M2} = E2,
+                Q2 = M2Q(M2),
+                case {T1, T2} of
+                    {bid, ask} -> {ok, [Q1, Q2 | T]};
+                    {ask, bid} -> {ok, [Q2, Q1 | T]}
                 end;
-            {finish,group} ->
-                case Stack of
-                    [E1, E2, {group, 'NoMsgTypes' } | T] ->
-                        {T1, M1} = E1,
-                        Q1 = M2Q(M1),
-                        {T2, M2} = E2,
-                        Q2 = M2Q(M2),
-                        case {T1, T2} of
-                            {bid, ask} -> {ok, [Q1, Q2 | T]};
-                            {ask, bid} -> {ok, [Q2, Q1 | T]}
-                        end;
-                    _ -> Acc
-                end;
-            {finish,trailer} ->
+            {finish,trailer,_} ->
                 case Result of
                     ok ->
                         [Bid, Ask, {symbol, Symbol}] = Stack,

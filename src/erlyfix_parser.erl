@@ -269,10 +269,10 @@ parse_tags(Body, P, Acc) ->
         _OtherResult -> _OtherResult
     end.
 
-finish_classify_scope(L, {Scope, _C4N}, MandatoryLeft, Acc, _Container) ->
+finish_classify_scope(L, {Scope, ScopeCTX, _C4N}, MandatoryLeft, Acc, _Container) ->
     case maps:size(MandatoryLeft) of
         0 ->
-            Acc1 = lists:reverse([{finish, Scope} | Acc ]),
+            Acc1 = lists:reverse([{finish, Scope, ScopeCTX} | Acc ]),
             % ?DEBUG(["Finish "] ++ [atom_to_list(Scope)]),
             {ok, Acc1, L};
         _N ->
@@ -302,7 +302,7 @@ classify_item(L, C, Acc0, Container) when element(1, C) =:= component ->
 
 classify_scope([], Current, MandatoryLeft, Acc, Container) ->
     finish_classify_scope([], Current, MandatoryLeft, Acc, Container);
-classify_scope([H | _T] = L, {_Scope, C4F} = Current, MandatoryLeft, Acc, Container) ->
+classify_scope([H | _T] = L, {_Scope, _ScopeCTX, C4F} = Current, MandatoryLeft, Acc, Container) ->
     F = element(1, H),
     case maps:find(F#field.id, C4F) of
         {ok, Composite_Id} ->
@@ -314,7 +314,7 @@ classify_scope([H | _T] = L, {_Scope, C4F} = Current, MandatoryLeft, Acc, Contai
         error -> finish_classify_scope(L, Current, MandatoryLeft, Acc, Container)
     end.
 start_classify_scope(List, {Scope, ScopeCTX, C4F, MC}, Container) ->
-    classify_scope(List, {Scope, C4F}, MC, [{start, Scope, ScopeCTX}], Container).
+    classify_scope(List, {Scope, ScopeCTX, C4F}, MC, [{start, Scope, ScopeCTX}], Container).
 
 
 classify([], _Candidates, Acc, _Container) ->
@@ -338,18 +338,18 @@ classify_message(M, P, L) ->
     H = P#protocol.header,
     T = P#protocol.trailer,
     Scopes = [
-        {header, {}, H#header.composite4field, H#header.mandatoryComposites},
-        {body, {}, M#message.composite4field, M#message.mandatoryComposites},
-        {trailer, {}, T#trailer.composite4field, T#trailer.mandatoryComposites}
+        {header, undefined, H#header.composite4field, H#header.mandatoryComposites},
+        {body, undefined, M#message.composite4field, M#message.mandatoryComposites},
+        {trailer, undefined, T#trailer.composite4field, T#trailer.mandatoryComposites}
     ],
     classify(L, Scopes, [], P#protocol.container).
 
--type header_start()    :: {start, header,{}}.
--type header_end()      :: {finish, header,{}}.
--type trailer_start()   :: {start, header,{}}.
--type trailer_end()     :: {finish, header,{}}.
--type body_start()      :: {start, body,{}}.
--type body_end()        :: {finish, body,{}}.
+-type header_start()    :: {start, header, undefined}.
+-type header_end()      :: {finish, header, undefined}.
+-type trailer_start()   :: {start, header, undefined}.
+-type trailer_end()     :: {finish, header, undefined}.
+-type body_start()      :: {start, body, undefined}.
+-type body_end()        :: {finish, body,undefined}.
 
 -type field_name()      :: atom().
 -type group_name()      :: atom().

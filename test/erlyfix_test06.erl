@@ -22,7 +22,7 @@ message_with_data_parse_test() ->
         F
     end,
     Markup_Expected = [
-        {start, header,{}},
+        {start, header, undefined},
             {field, 'BeginString', GetField('BeginString'), <<"FIX.4.4">>},
             {field, 'BodyLength', GetField('BodyLength'), 102},
             {field, 'MsgType', GetField('MsgType'), <<"A">>},
@@ -32,8 +32,8 @@ message_with_data_parse_test() ->
             {field, 'TargetCompID', GetField('TargetCompID'), <<"you">>},
             {field, 'MsgSeqNum', GetField('MsgSeqNum'), <<"1">>},
             {field, 'SendingTime', GetField('SendingTime'), <<"20090107-18:15:16">>},
-        {finish,header},
-        {start,body,{}},
+        {finish, header, undefined},
+        {start,body, undefined},
             {field, 'EncryptMethod', GetField('EncryptMethod'), <<"0">>},
             {field, 'HeartBtInt', GetField('HeartBtInt'), <<"60">>},
             {start,group,{'NoMsgTypes',2}},
@@ -41,11 +41,11 @@ message_with_data_parse_test() ->
                 {field, 'MsgDirection', GetField('MsgDirection'), << "S">>},
                 {field, 'RefMsgType', GetField('RefMsgType'), <<"def">>},
                 {field, 'MsgDirection', GetField('MsgDirection'), <<"R">>},
-            {finish,group},
-        {finish,body},
-        {start,trailer,{}},
+            {finish,group,{'NoMsgTypes',2}},
+        {finish,body, undefined},
+        {start,trailer, undefined},
             {field, 'CheckSum', GetField('CheckSum'), 232},
-        {finish,trailer}
+        {finish,trailer, undefined}
     ],
     % ?DEBUG(Markup_Expected),
     % ?DEBUG(TagsMarkup),
