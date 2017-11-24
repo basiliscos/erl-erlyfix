@@ -1,6 +1,6 @@
 -module(erlyfix_test09).
 -include_lib("eunit/include/eunit.hrl").
--include("include/erlyfix.hrl").
+-include("erlyfix.hrl").
 -include("debug.hrl").
 
 -record(quote, {

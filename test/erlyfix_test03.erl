@@ -1,6 +1,6 @@
 -module(erlyfix_test03).
 -include_lib("eunit/include/eunit.hrl").
--include("include/erlyfix.hrl").
+-include("erlyfix.hrl").
 -include("debug.hrl").
 
 load() ->

@@ -1,5 +1,5 @@
 -module(erlyfix_utils).
--include("include/erlyfix.hrl").
+-include("erlyfix.hrl").
 
 -export([checksum/1, lookup_field/2, lookup_field_by_no/2, lookup_message/2, lookup/2]).
 

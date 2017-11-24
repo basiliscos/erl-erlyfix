@@ -1,5 +1,5 @@
 -module(erlyfix_fields).
--include("include/erlyfix.hrl").
+-include("erlyfix.hrl").
 -include("debug.hrl").
 
 -export([serialize_field/4, validate/3, convert/2, as_label/2, compile/0]).

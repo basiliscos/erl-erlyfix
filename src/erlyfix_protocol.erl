@@ -1,5 +1,5 @@
 -module(erlyfix_protocol).
--include("include/erlyfix.hrl").
+-include("erlyfix.hrl").
 -include("debug.hrl").
 
 -export([load/1, load/2, serialize/3]).

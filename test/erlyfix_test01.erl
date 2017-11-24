@@ -1,6 +1,6 @@
 -module(erlyfix_test01).
 -include_lib("eunit/include/eunit.hrl").
--include("include/erlyfix.hrl").
+-include("erlyfix.hrl").
 
 load_test() ->
     {error, Err} = erlyfix_protocol:load("..."),

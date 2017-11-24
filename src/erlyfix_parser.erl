@@ -1,5 +1,5 @@
 -module(erlyfix_parser).
--include("include/erlyfix.hrl").
+-include("erlyfix.hrl").
 -include("debug.hrl").
 
 -export([parse/2, compile/1]).
