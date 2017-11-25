@@ -19,7 +19,7 @@ install:
     - pip install --user codecov
 
 script:
-    - ./rebar3 eunit --dir ./test
+    - ./rebar3 eunit --dir ./test --cover
     - ./rebar3 dialyzer
 
 after_success:
