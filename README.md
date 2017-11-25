@@ -53,7 +53,7 @@ TagsMarkup is flat list of tags uplifted to fields/groups/components. It is expe
 
 ```erlang
 [
-    {start, header,{}},
+    {start, header, undefined},
         {field, 'BeginString', F_BeginString, <<"FIX.4.4">>},
         {field, 'BodyLength', F_BodyLength, 102},
         {field, 'MsgType', F_MsgType, <<"A">>},
@@ -63,8 +63,8 @@ TagsMarkup is flat list of tags uplifted to fields/groups/components. It is expe
         {field, 'TargetCompID',F_TargetCompID, <<"you">>},
         {field, 'MsgSeqNum', F_MsgSeqNum, <<"1">>},
         {field, 'SendingTime', F_SendingTime, <<"20090107-18:15:16">>},
-    {finish,header},
-    {start,body,{}},
+    {finish,header,undefined},
+    {start,body,undefined},
         {field, 'EncryptMethod', F_EncryptMethod, <<"0">>},
         {field, 'HeartBtInt', F_HeartBtInt, <<"60">>},
         {start,group,{'NoMsgTypes',2}},
@@ -72,11 +72,11 @@ TagsMarkup is flat list of tags uplifted to fields/groups/components. It is expe
             {field, 'MsgDirection', F_MsgDirection, << "S">>},
             {field, 'RefMsgType', F_RefMsgType, <<"def">>},
             {field, 'MsgDirection', F_MsgDirection, <<"R">>},
-        {finish,group},
-    {finish,body},
-    {start,trailer,{}},
+        {finish,group,{'NoMsgTypes',2}},
+    {finish,body,undefined},
+    {start,trailer,undefined},
         {field, 'CheckSum', F_CheckSum, 232},
-    {finish,trailer}
+    {finish,trailer,undefined}
 ],
 ```
 
@@ -149,20 +149,17 @@ F = fun(E, {Result, Stack} = Acc ) ->
                 2 -> {ok, [{group, 'NoMsgTypes' } | Stack]};
                 _ -> {error, Stack}
             end;
-        {finish,group} ->
-            case Stack of
-                [E1, E2, {group, 'NoMsgTypes' } | T] ->
-                    {T1, M1} = E1,
-                    Q1 = M2Q(M1),
-                    {T2, M2} = E2,
-                    Q2 = M2Q(M2),
-                    case {T1, T2} of
-                        {bid, ask} -> {ok, [Q1, Q2 | T]};
-                        {ask, bid} -> {ok, [Q2, Q1 | T]}
-                    end;
-                _ -> Acc
+        {finish,group, {'NoMDEntries',2}} ->
+            [E1, E2, {group, 'NoMsgTypes' } | T] = Stack
+            {T1, M1} = E1,
+            Q1 = M2Q(M1),
+            {T2, M2} = E2,
+            Q2 = M2Q(M2),
+            case {T1, T2} of
+                {bid, ask} -> {ok, [Q1, Q2 | T]};
+                {ask, bid} -> {ok, [Q2, Q1 | T]}
             end;
-        {finish,trailer} ->
+        {finish,trailer,_} ->
             case Result of
                 ok ->
                     [Bid, Ask, {symbol, Symbol}] = Stack,
