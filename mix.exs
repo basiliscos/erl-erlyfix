@@ -23,6 +23,7 @@ defmodule Erlyfix.MixProject do
   defp deps() do
     [
       {:erlsom, "~> 1.4.0"},
+      {:ex_doc, "~> 0.14", only: :dev},
     ]
   end
 
