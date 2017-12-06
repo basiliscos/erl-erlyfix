@@ -32,7 +32,7 @@ defmodule Erlyfix.MixProject do
 
   defp package() do
     [
-      files: ["src",  "mix.exs", "rebar*", "README*", "readme*", "LICENSE*", "license*"],
+      files: ["src",  "mix.exs", "rebar*", "README*", "LICENSE*"],
       maintainers: ["Ivan Baidakou"],
       licenses: ["Apache 2.0"],
       links: %{"GitHub" => "https://github.com/basiliscos/erl-erlyfix"}
