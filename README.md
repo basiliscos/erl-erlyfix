@@ -2,7 +2,9 @@ erlyfix
 =====
 
 [![Travis](https://img.shields.io/travis/basiliscos/erl-erlyfix.svg)](https://travis-ci.org/basiliscos/erl-erlyfix)
+[![codecov](https://codecov.io/gh/basiliscos/erl-erlyfix/badge.svg)](https://codecov.io/gh/basiliscos/erl-erlyfix)
 [![license](https://img.shields.io/github/license/basiliscos/erl-erlyfix.svg)](https://github.com/basiliscos/erl-erlyfix/blob/master/LICENSE)
+
 
 FIX (Foreign Information eXchange) protocol implementation in erlang.
 
