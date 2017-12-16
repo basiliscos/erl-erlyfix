@@ -51,6 +51,8 @@ BinaryMessage = <<"8=FIX.4.4", 1, "9=102", 1, "35=A", 1,
 
 ```
 
+The fields `BeginString`, `BodyLength`, `MsgType` and `CheckSum` are managed by the library. They **should not** be provided for messages serialization.
+
 TagsMarkup is flat list of tags uplifted to fields/groups/components. It is expected to be processed by `lists:foldl/3`. Tagsmarkup is something like that:
 
 ```erlang
@@ -185,7 +187,6 @@ Label = erlyfix_fields:as_label(V, F).
 (It is not possible to use atoms here, as the string description in XML-specification exceed possible atom length in Erlang).
 
 In general it is assumed that you should use this library with tigth cooperation with XML-specifictions.
-
 
 
 Build
